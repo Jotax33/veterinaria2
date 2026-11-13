@@ -1,9 +1,12 @@
 :root {
-  --bg: #f6f8f7;
-  --card: #ffffff;
+  --bg: #e7dcfa;
+  --card: #d4d8de;
+  --campo: #fbfbfd;
+  --plata-grad: linear-gradient(145deg, #f2f3f5 0%, #d3d7dd 55%, #c3c8d0 100%);
+  --plata-borde: #aab1bc;
   --text: #1b1f1d;
-  --muted: #5d6762;
-  --line: #d5dcd8;
+  --muted: #4b535b;
+  --line: #aab1bc;
   --primary: #138a55;
   --on-primary: #ffffff;
   --primary-soft: #e0f3ea;
@@ -15,26 +18,23 @@
   --dia-borde: #f0c07a;
   --noche: #dfeafd;
   --noche-borde: #94b4e8;
-  --morado: #f0e8fc;
-  --morado-borde: #cdb8f1;
-  --morado-texto: #5b3a98;
   --radius: 14px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111413;
-    --card: #1b1f1d;
+    --bg: #1d1631;
+    --card: #353941;
+    --campo: #23262c;
+    --plata-grad: linear-gradient(145deg, #4a4f58 0%, #393d45 55%, #2f3238 100%);
+    --plata-borde: #5f6671;
     --text: #e8ece9;
-    --muted: #9aa5a0;
-    --line: #333a37;
+    --muted: #b4bcc5;
+    --line: #5f6671;
     --primary: #4cd98b;
     --on-primary: #06281a;
     --primary-soft: #1d3a2d;
     --danger: #ffb4ab;
     --danger-soft: #3b1f1c;
-    --morado: #2a2142;
-    --morado-borde: #5d4a8c;
-    --morado-texto: #cdb8f1;
     --cuadro: #1b2c47;
     --cuadro-borde: #3d5e92;
     --dia: #3a2b14;
@@ -64,7 +64,7 @@ input[type=text], input[type=number], input[type=date], input[type=email], input
   width: 100%;
   font: inherit; font-size: 16px; /* 16px evita el zoom automático en iPhone */
   color: var(--text);
-  background: var(--card);
+  background: var(--campo);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 11px 12px;
@@ -104,28 +104,28 @@ button:active:not(:disabled) { transform: scale(.98); }
 .barra { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 8px; }
 .tarjeta {
   display: flex; gap: 8px; align-items: flex-start;
-  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: var(--radius);
   padding: 12px 12px 12px 14px; margin: 8px 0; cursor: pointer;
 }
 .tarjeta .info { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .tarjeta .nombre { font-weight: 700; font-size: 1.05rem; }
 .alerta { color: var(--danger); font-weight: 600; }
 .vacio { color: var(--muted); }
-details.respaldo { margin-top: 28px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }
+details.respaldo { margin-top: 28px; background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: var(--radius); padding: 10px 14px; }
 details.respaldo summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 .opcion-export { margin: 0 0 4px; }
 #info-export { font-size: .85rem; margin: 0 0 12px; }
 
 /* ---------- importar ---------- */
-.panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 14px 10px; margin: 6px 0 14px; }
+.panel { background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: var(--radius); padding: 4px 14px 10px; margin: 6px 0 14px; }
 .panel h2 { margin-top: 12px; }
 .panel .opt small { color: var(--muted); }
 .panel .nueva { color: var(--primary); font-weight: 600; }
 
 /* ---------- detalle: cuadro azul ---------- */
 .cuadro {
-  background: var(--cuadro); border: 1px solid var(--cuadro-borde);
+  background: var(--plata-grad); border: 1px solid var(--plata-borde);
   border-radius: 28px; padding: 14px 22px 16px;
 }
 .cuadro-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -141,7 +141,7 @@ details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 @media (min-width: 760px) { .bloque { grid-template-columns: 190px 1fr; gap: 20px; } }
 .bloque > button { border-radius: 16px; padding: 14px 12px; width: 100%; line-height: 1.25; }
 .contenido { min-width: 0; }
-.caja { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.caja { background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: 10px; padding: 10px 14px; }
 .caja-t { text-align: center; font-size: .9rem; font-weight: 600; margin-bottom: 6px; }
 .fila-ex { display: grid; grid-template-columns: 110px 1fr auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
 .fila-ex:first-of-type { border-top: 0; }
@@ -154,11 +154,12 @@ details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 .fila-ex .acc-ex { display: flex; gap: 4px; align-items: center; }
 .fila-ex button.ok { padding: 4px 10px; font-size: .85rem; background: var(--primary-soft); color: var(--primary); border-color: transparent; }
 .fila-eco { grid-template-columns: 1fr auto; }
-/* ---------- secciones moradas (formulario y lista) ---------- */
-.seccion-form { background: var(--morado); border: 1px solid var(--morado-borde); border-radius: var(--radius); padding: 4px 14px 14px; margin-top: 16px; }
-.seccion-form > .sec-t { margin: 10px 0 0; font-size: .85rem; font-weight: 700; letter-spacing: .02em; color: var(--morado-texto); }
+/* ---------- secciones plateadas (formulario y lista) ---------- */
+.seccion-form { background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: var(--radius); padding: 4px 14px 14px; margin-top: 16px; }
+.seccion-form > .sec-t { margin: 10px 0 0; font-size: .85rem; font-weight: 700; letter-spacing: .02em; color: var(--muted); }
 .seccion-form fieldset:first-of-type { margin-top: 8px; }
-.grupo-t { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px; padding: 8px 14px; background: var(--morado); border: 1px solid var(--morado-borde); border-radius: 12px; font-size: .95rem; font-weight: 700; color: var(--morado-texto); }
+.seccion-form > .campo:first-of-type { margin-top: 8px; }
+.grupo-t { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px; padding: 8px 14px; background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: 12px; font-size: .95rem; font-weight: 700; }
 .grupo-t:first-of-type { margin-top: 8px; }
 @media (max-width: 480px) { .fila-ex .acc-ex { grid-column: 1 / -1; justify-content: flex-end; flex-wrap: wrap; } }
 
@@ -173,16 +174,16 @@ select.pildora {
   background-position: calc(100% - 20px) 55%, calc(100% - 14px) 55%;
   background-size: 6px 6px, 6px 6px; background-repeat: no-repeat;
 }
-.tabla-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.tabla-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--plata-grad); }
 table.tabla-cl { border-collapse: collapse; width: 100%; min-width: 100%; font-size: .92rem; }
 .tabla-cl th, .tabla-cl td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; white-space: pre-wrap; min-width: 108px; }
 .tabla-cl thead th { text-align: center; font-weight: 700; }
 .tabla-cl thead th.dia { background: var(--dia); }
 .tabla-cl thead th.noche { background: var(--noche); }
-.tabla-cl tbody th { font-weight: 600; color: var(--muted); background: var(--bg); position: sticky; left: 0; min-width: 120px; }
+.tabla-cl tbody th { font-weight: 600; color: var(--muted); background: var(--card); position: sticky; left: 0; min-width: 120px; }
 .tabla-cl .x { padding: 0 6px; margin-left: 6px; font-size: .8rem; border-radius: 6px; background: transparent; color: var(--danger); border-color: transparent; }
 .tabla-cl .hora { display: block; font-weight: 400; font-size: .8rem; color: var(--muted); }
-.coment-turno { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 10px 14px; }
+.coment-turno { margin-top: 12px; border: 1px solid var(--plata-borde); border-radius: 14px; background: var(--plata-grad); padding: 10px 14px; }
 .coment-turno .t { font-size: .85rem; font-weight: 600; text-align: center; margin-bottom: 4px; }
 .coment-turno p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .coment-turno p b { font-weight: 600; }
@@ -195,7 +196,7 @@ table.tabla-cl { border-collapse: collapse; width: 100%; min-width: 100%; font-s
 /* ---------- barra inferior ---------- */
 nav {
   position: fixed; left: 0; right: 0; bottom: 0;
-  background: var(--card); border-top: 1px solid var(--line);
+  background: var(--plata-grad); border-top: 1px solid var(--plata-borde);
   display: flex; justify-content: center;
   padding-bottom: env(safe-area-inset-bottom);
 }

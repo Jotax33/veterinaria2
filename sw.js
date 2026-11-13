@@ -1,6 +1,6 @@
 // Service worker: deja la app disponible sin internet.
 // Si cambias index.html, sube el número de VERSION para que los teléfonos descarguen la versión nueva.
-const VERSION = 'veterinaria-v12';
+const VERSION = 'veterinaria-v13';
 const ARCHIVOS = [
   './',
   './index.html',

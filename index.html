@@ -348,6 +348,8 @@ function plantillaFormulario(s, modo) {
   const titExamenes = tituloExamenes(s.estadoExamenes);
   const gato = s.especie === 'Gato';
   return `
+    <section class="seccion-form">
+      <p class="sec-t">Datos del paciente</p>
     <label class="campo"><span>Fecha de ingreso</span>
       <input type="date" data-k="fecha" value="${esc(s.fecha)}"></label>
     ${campoTexto('nombre', 'Nombre', s.nombre)}
@@ -358,20 +360,25 @@ function plantillaFormulario(s, modo) {
       ${campoTexto('meses', 'Meses', s.meses, { tipo: 'number', inputmode: 'numeric', errId: 'err-meses', errTexto: 'Máximo 11', error: !v.mesesOk })}
     </div>
     ${campoTexto('peso', 'Peso (kg, opcional)', s.peso, { inputmode: 'decimal', errId: 'err-peso', errTexto: 'Escribe un número, por ejemplo 4,5', error: !v.pesoOk })}
+    </section>
+
     <section class="seccion-form">
       <p class="sec-t">Motivo y diagnóstico</p>
       ${campoTexto('motivoIngreso', 'Motivo de ingreso', s.motivoIngreso)}
       ${campoTexto('diagnostico', 'Diagnóstico', s.diagnostico)}
+      <label class="opt" style="margin-top:8px"><input type="checkbox" data-bool="infeccioso" ${s.infeccioso ? 'checked' : ''}><span>Es infeccioso</span></label>
     </section>
-    <label class="opt" style="margin-top:8px"><input type="checkbox" data-bool="infeccioso" ${s.infeccioso ? 'checked' : ''}><span>Es infeccioso</span></label>
 
     ${gato ? `
+    <section class="seccion-form">
+      <p class="sec-t">Retrovirales</p>
       ${grupoRadio('retrovirales', 'Retrovirales', ['Sí', 'No', 'Pendiente'], s.retrovirales)}
       ${s.retrovirales === 'Sí' ? `
         <div class="sub"><span class="campo" style="margin:6px 0 0"><span style="font-size:.8rem;color:var(--muted);font-weight:600">Resultados (puedes marcar más de uno)</span></span>
         ${OPCIONES_RESULTADOS.map((o) =>
           `<label class="opt"><input type="checkbox" data-res="${o}" ${s.resultados.includes(o) ? 'checked' : ''}><span>${o}</span></label>`).join('')}
         </div>` : ''}
+    </section>
     ` : ''}
 
     <section class="seccion-form">
@@ -392,8 +399,11 @@ function plantillaFormulario(s, modo) {
         area: true, errId: 'err-hall', errTexto: 'Obligatorio si la ecografía es Sí', error: v.hallazgosFalta }) : ''}
     </section>
 
-    <label class="opt" style="margin-top:8px"><input type="checkbox" data-bool="enAyuno" ${s.enAyuno ? 'checked' : ''}><span>En ayuno</span></label>
-    ${campoTexto('comentarios', 'Comentarios extras', s.comentarios, { area: true })}
+    <section class="seccion-form">
+      <p class="sec-t">Otros datos</p>
+      <label class="opt" style="margin-top:8px"><input type="checkbox" data-bool="enAyuno" ${s.enAyuno ? 'checked' : ''}><span>En ayuno</span></label>
+      ${campoTexto('comentarios', 'Comentarios extras', s.comentarios, { area: true })}
+    </section>
 
     <div class="acciones">
       <button type="button" id="btn-guardar" ${v.ok ? '' : 'disabled'}>${modo === 'editar' ? 'Guardar cambios' : 'Guardar'}</button>
