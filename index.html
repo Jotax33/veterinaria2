@@ -187,6 +187,8 @@ table.tabla-cl { border-collapse: collapse; width: 100%; min-width: 100%; font-s
 .coment-turno p b { font-weight: 600; }
 .coment-turno button.txt { padding: 2px 8px; font-size: .85rem; }
 .coment-turno textarea { margin-top: 4px; }
+.filtro-cl { margin: 0 0 12px; }
+.filtro-cl .campo { margin-top: 0; }
 .coment-turno .acc { display: flex; gap: 8px; margin: 6px 0 10px; }
 
 /* ---------- barra inferior ---------- */
@@ -722,6 +724,9 @@ function generarTextoExportacion(todos = false) {
         if (c.pad) signos.push(`PAD: ${c.pad}`);
         if (signos.length) L.push(`      ${signos.join(' | ')}`);
         if (c.alimentacion.length) L.push(`      Alimentación: ${c.alimentacion.join(', ')}`);
+        if (c.orina) L.push(`      Orina: ${c.orina}`);
+        if (c.vomito) L.push(`      Vómito: ${c.vomito}`);
+        if (c.feca) L.push(`      Feca: ${c.feca}`);
         if (c.orinaDeposiciones) L.push(`      Orina/deposiciones: ${c.orinaDeposiciones}`);
         if (c.comentarios) L.push(`      Comentarios del turno: ${c.comentarios}`);
       }
@@ -733,17 +738,6 @@ function generarTextoExportacion(todos = false) {
 
 const quiereTodos = () => !!(document.getElementById('chk-todos') && document.getElementById('chk-todos').checked);
 
-async function compartirTexto() {
-  const ahora = Date.now();
-  const texto = generarTextoExportacion(quiereTodos());
-  // Primero la hoja de compartir del teléfono (ahí aparece WhatsApp); si no existe, abre WhatsApp directo.
-  if (navigator.share) {
-    try { await navigator.share({ text: texto }); guardarCorte(ahora); pantallaLista(); return; }
-    catch (e) { if (e && e.name === 'AbortError') return; }
-  }
-  guardarCorte(ahora);
-  window.location.href = 'https://wa.me/?text=' + encodeURIComponent(texto);
-}
 async function copiarTexto() {
   const ahora = Date.now();
   const texto = generarTextoExportacion(quiereTodos());
@@ -1086,13 +1080,10 @@ function pantallaLista() {
     <p class="ayuda" style="margin:0 0 6px">Sesión: ${esc(usuario ? usuario.email : '')} · <button class="txt" id="btn-salir" style="padding:2px 6px">Salir</button></p>
     ${htmlBannerLocal()}
     <div class="barra">
-      <button id="btn-wsp" ${activas.length ? '' : 'disabled'}>Exportar a WhatsApp</button>
-      <button id="btn-copiar" class="sec" ${activas.length ? '' : 'disabled'}>Copiar texto</button>
-      <button id="btn-imp" class="sec">Importar mensaje</button>
+      <button id="btn-copiar" ${activas.length ? '' : 'disabled'}>Copiar texto</button>
     </div>
     <label class="opt opcion-export"><input type="checkbox" id="chk-todos" ${marcado ? 'checked' : ''}><span>Incluir todos los clínicos (no solo los nuevos)</span></label>
     <p class="vacio" id="info-export">${esc(textoInfoExport())}</p>
-    <div id="panel-imp"></div>
     ${activas.length ? tarjetas : '<p class="vacio">No hay mascotas hospitalizadas. Agrega una en la pestaña Ingreso.</p>'}
     <details class="respaldo">
       <summary>Copia de seguridad</summary>
@@ -1104,9 +1095,7 @@ function pantallaLista() {
       </div>
     </details>`;
 
-  document.getElementById('btn-wsp').onclick = compartirTexto;
   document.getElementById('btn-copiar').onclick = copiarTexto;
-  document.getElementById('btn-imp').onclick = abrirPanelImportar;
   document.getElementById('btn-salir').onclick = () => { if (confirm('¿Cerrar sesión?')) FB.signOut(fbAuth); };
   document.getElementById('chk-todos').onchange = () => {
     document.getElementById('info-export').textContent = textoInfoExport();
@@ -1244,14 +1233,14 @@ function dato(titulo, valor) {
 }
 
 // Qué secciones están abiertas (solo mientras estás en esta pantalla) y el clínico que se está escribiendo
-let vista = { id: null, ex: false, cl: false, tc: false };
+let vista = { id: null, ex: false, cl: false, tc: false, fc: '', tt: 'Todos' };
 let borrador = null;
 let editCom = null, textoCom = ''; // comentario de turno que se está editando
 const turnoActual = () => { const h = new Date().getHours(); return h >= 7 && h < 20 ? 'Día' : 'Noche'; };
-const borradorVacio = () => ({ turno: turnoActual(), temp: '', glicemia: '', pas: '', pam: '', pad: '', alim: '', via: '', orina: '', comentarios: '' });
+const borradorVacio = () => ({ turno: turnoActual(), temp: '', glicemia: '', pas: '', pam: '', pad: '', alim: '', via: '', orina: '', vomito: '', feca: '', comentarios: '' });
 const iconoTurno = (t) => (t === 'Noche' ? '🌙' : '☀');
 const borradorValido = (b) => !(b.alim === 'Sí' && !b.via) && !!(b.temp.trim() || b.glicemia.trim() || b.pas.trim() || b.pam.trim() || b.pad.trim()
-  || b.alim || b.orina.trim() || b.comentarios.trim());
+  || b.alim || b.orina || b.vomito || b.feca.trim() || b.comentarios.trim());
 
 function plantillaListaExamenes(m) {
   const lista = examenesOrdenados(m);
@@ -1263,6 +1252,10 @@ function plantillaListaExamenes(m) {
       <button class="peligro" data-quitar-ex="${i}" aria-label="Quitar examen">Quitar</button>
     </div>`).join('')}</div>`;
 }
+
+const grupoSiNo = (k, titulo, valor) => `<fieldset><legend>${titulo}</legend>
+        ${['Sí', 'No'].map((o) => `<label class="opt"><input type="checkbox" data-sn="${k}" data-v="${o}" ${valor === o ? 'checked' : ''}><span>${o}</span></label>`).join('')}
+      </fieldset>`;
 
 function plantillaFormClinico(b) {
   const noche = b.turno === 'Noche';
@@ -1288,41 +1281,57 @@ function plantillaFormClinico(b) {
           ${b.via ? '' : '<p class="ayuda">Elige boca o sonda (solo una).</p>'}
         </div>` : ''}
       </fieldset>
-      <label class="campo"><span>Orina / deposiciones</span><input type="text" data-c="orina" value="${esc(b.orina)}" autocomplete="off"></label>
+      ${grupoSiNo('orina', 'Orina', b.orina)}
+      ${grupoSiNo('vomito', 'Vómito', b.vomito)}
+      <label class="campo"><span>Feca</span><input type="text" data-c="feca" value="${esc(b.feca)}" autocomplete="off"></label>
       <label class="campo"><span>Comentarios del turno</span><textarea data-c="comentarios" rows="3">${esc(b.comentarios)}</textarea></label>
       <div class="acciones"><button id="btn-guardar-cl" ${borradorValido(b) ? '' : 'disabled'}>Guardar clínico</button></div>
     </div>`;
 }
 
 function plantillaTablaClinicos(m) {
-  const lista = clinicosOrdenados(m);
-  if (lista.length === 0) return '<div class="caja"><p class="vacio" style="margin:4px 0">Todavía no hay clínicos registrados.</p></div>';
+  const todos = clinicosOrdenados(m);
+  if (todos.length === 0) return '<div class="caja"><p class="vacio" style="margin:4px 0">Todavía no hay clínicos registrados.</p></div>';
+  const filtro = `
+    <div class="filtro-cl">
+      <div class="fila2">
+        <label class="campo"><span>Fecha</span><input type="date" data-f="fc" value="${esc(vista.fc)}"></label>
+        <label class="campo"><span>Turno</span>
+          <select data-f="tt">
+            ${['Todos', 'Día', 'Noche'].map((o) => `<option value="${o}" ${vista.tt === o ? 'selected' : ''}>${o === 'Día' ? '☀ Día' : o === 'Noche' ? '🌙 Noche' : 'Todos'}</option>`).join('')}
+          </select></label>
+      </div>
+      ${vista.fc ? '<button class="txt" id="f-todas" style="padding:4px 0">Ver todas las fechas</button>' : '<p class="ayuda">Mostrando todas las fechas.</p>'}
+    </div>`;
+  const lista = todos.filter((c) => (!vista.fc || aISO(c.fecha) === vista.fc) && (vista.tt === 'Todos' || c.turno === vista.tt));
+  if (lista.length === 0) return filtro + '<div class="caja"><p class="vacio" style="margin:4px 0">No hay clínicos guardados para esa fecha y turno.</p></div>';
   const celda = (v) => (v ? esc(v) : '—');
   const filas = [
     ['Temp °C', (c) => c.temp], ['Glicemia', (c) => c.glicemia],
     ['PAS', (c) => c.pas], ['PAM', (c) => c.pam], ['PAD', (c) => c.pad],
     ['Alimentación', (c) => c.alimentacion.map((a) => (a === 'No' ? 'No' : 'Por ' + a.toLowerCase())).join(', ')],
-    ['Orina / deposiciones', (c) => c.orinaDeposiciones]
+    ['Orina', (c) => c.orina], ['Vómito', (c) => c.vomito], ['Feca', (c) => c.feca]
   ];
-  const conComentario = lista.filter((c) => c.comentarios);
-  return `
+  // Clínicos guardados antes, cuando orina y deposiciones eran un solo texto
+  if (lista.some((c) => c.orinaDeposiciones)) filas.push(['Orina / deposiciones', (c) => c.orinaDeposiciones]);
+  const comentarios = lista.map((c) => {
+    const cab = `<b>${formatearFecha(c.fecha)} ${formatearHora(c.fecha)} ${iconoTurno(c.turno)}:</b>`;
+    if (editCom === c.fecha) {
+      return `<p>${cab}</p><textarea data-ecom rows="3">${esc(textoCom)}</textarea>
+        <div class="acc"><button id="guardar-com">Guardar</button><button class="sec" id="cancelar-com">Cancelar</button></div>`;
+    }
+    return c.comentarios
+      ? `<p>${cab} ${esc(c.comentarios)} <button class="txt" data-edit-com="${c.fecha}">Editar</button></p>`
+      : `<p>${cab} <span class="vacio">Sin comentario</span> <button class="txt" data-edit-com="${c.fecha}">Agregar</button></p>`;
+  }).join('');
+  return `${filtro}
     <div class="tabla-scroll"><table class="tabla-cl">
       <thead><tr><th></th>${lista.map((c) => `
         <th class="${c.turno === 'Noche' ? 'noche' : 'dia'}">${iconoTurno(c.turno)} ${formatearFecha(c.fecha)}<span class="hora">${formatearHora(c.fecha)} · ${c.turno}
           <button class="x" data-quitar-cl="${c.fecha}" aria-label="Borrar este clínico">✕</button></span></th>`).join('')}</tr></thead>
       <tbody>${filas.map(([t, f]) => `<tr><th scope="row">${t}</th>${lista.map((c) => `<td>${celda(f(c))}</td>`).join('')}</tr>`).join('')}</tbody>
     </table></div>
-    <div class="coment-turno"><div class="t">Comentarios del turno</div>
-      ${conComentario.length ? conComentario.map((c) => {
-          const cab = `<b>${formatearFecha(c.fecha)} ${formatearHora(c.fecha)} ${iconoTurno(c.turno)}:</b>`;
-          if (editCom === c.fecha) {
-            return `<p>${cab}</p><textarea data-ecom rows="3">${esc(textoCom)}</textarea>
-              <div class="acc"><button id="guardar-com">Guardar</button><button class="sec" id="cancelar-com">Cancelar</button></div>`;
-          }
-          return `<p>${cab} ${esc(c.comentarios)} <button class="txt" data-edit-com="${c.fecha}">Editar</button></p>`;
-        }).join('')
-        : '<p class="vacio" style="text-align:center">Sin comentarios.</p>'}
-    </div>`;
+    <div class="coment-turno"><div class="t">Comentarios del turno</div>${comentarios}</div>`;
 }
 
 function pantallaDetalle(id) {
@@ -1332,7 +1341,12 @@ function pantallaDetalle(id) {
     document.getElementById('volver').onclick = () => (location.hash = '#/mascotas');
     return;
   }
-  if (vista.id !== id) { vista = { id, ex: false, cl: false, tc: false }; borrador = borradorVacio(); editCom = null; }
+  if (vista.id !== id) {
+    // Al abrir la ficha se muestra la fecha del último clínico guardado (o hoy si todavía no hay)
+    const ult = m.clinicos.length ? Math.max(...m.clinicos.map((c) => c.fecha)) : Date.now();
+    vista = { id, ex: false, cl: false, tc: false, fc: aISO(ult), tt: 'Todos' };
+    borrador = borradorVacio(); editCom = null;
+  }
   if (!borrador) borrador = borradorVacio();
 
   app.innerHTML = `
@@ -1370,7 +1384,7 @@ function pantallaDetalle(id) {
     </div>
 
     <div class="bloque">
-      <button class="sec" id="tg-tc" aria-expanded="${vista.tc}">${vista.tc ? 'Ocultar todos los clínicos' : 'Mostrar todos los clínicos'}</button>
+      <button class="sec" id="tg-tc" aria-expanded="${vista.tc}">${vista.tc ? 'Ocultar clínicos guardados' : 'Ver clínicos guardados'}</button>
       <div class="contenido">${vista.tc ? plantillaTablaClinicos(m) : ''}</div>
     </div>`;
 
@@ -1391,6 +1405,13 @@ function pantallaDetalle(id) {
       const f = document.getElementById('form-cl');
       f.classList.toggle('noche', t.value === 'Noche');
       f.classList.toggle('dia', t.value !== 'Noche');
+    } else if (t.dataset.sn) {
+      borrador[t.dataset.sn] = t.checked ? t.dataset.v : '';
+      redibujar();
+    } else if (t.dataset.f) {
+      vista[t.dataset.f] = t.value;
+      editCom = null;
+      redibujar();
     } else if (t.dataset.alim) {
       borrador.alim = t.checked ? t.dataset.alim : '';
       if (borrador.alim !== 'Sí') borrador.via = '';
@@ -1426,6 +1447,7 @@ function pantallaDetalle(id) {
       if (c1) { editCom = c1.fecha; textoCom = c1.comentarios || ''; redibujar(); }
       return;
     }
+    if (b.id === 'f-todas') { vista.fc = ''; editCom = null; redibujar(); return; }
     if (b.id === 'cancelar-com') { editCom = null; redibujar(); return; }
     if (b.id === 'guardar-com') {
       const c1 = m.clinicos.find((c) => c.fecha === editCom);
@@ -1447,11 +1469,11 @@ function pantallaDetalle(id) {
         temp: borrador.temp.trim(), glicemia: borrador.glicemia.trim(),
         pas: borrador.pas.trim(), pam: borrador.pam.trim(), pad: borrador.pad.trim(),
         alimentacion: borrador.alim === 'Sí' ? [borrador.via] : borrador.alim === 'No' ? ['No'] : [],
-        orinaDeposiciones: borrador.orina.trim(), comentarios: borrador.comentarios.trim()
+        orina: borrador.orina, vomito: borrador.vomito, feca: borrador.feca.trim(), comentarios: borrador.comentarios.trim()
       };
       nubeAgregarClinico(id, nuevo);
       borrador = borradorVacio();
-      vista.tc = true;
+      vista.tc = true; vista.fc = aISO(fecha); vista.tt = nuevo.turno;
       aviso('Clínico guardado');
       redibujar();
       return;
