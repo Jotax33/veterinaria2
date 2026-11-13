@@ -163,6 +163,7 @@ details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 .fila-ex .acc-ex { display: flex; gap: 4px; align-items: center; }
 .fila-ex button.ok { padding: 4px 10px; font-size: .85rem; background: var(--primary-soft); color: var(--primary); border-color: transparent; }
 .fila-eco { grid-template-columns: 1fr auto; }
+@media (max-width: 480px) { .fila-ex .acc-ex { grid-column: 1 / -1; justify-content: flex-end; flex-wrap: wrap; } }
 
 /* ---------- clínicos ---------- */
 .form-cl { border-radius: 14px; padding: 4px 14px 12px; border: 1px solid; transition: background .2s, border-color .2s; }
@@ -1259,7 +1260,7 @@ function plantillaListaExamenes(m) {
       <span>${e.estado === 'Tomados' ? '' : 'Se tomará el '}${formatearFecha(e.fecha)}</span>
       <span class="det"><span class="etq ${e.estado === 'Tomados' ? 'tomado' : 'pendiente'}">${e.estado === 'Tomados' ? 'Tomado' : 'Pendiente'}</span>${esc(e.detalle)}</span>
       <span class="acc-ex">
-        ${e.estado === 'Tomados' ? '' : `<button class="ok" data-tomar-ex="${i}" aria-label="Marcar examen como tomado">Tomado</button>`}
+        ${e.estado === 'Tomados' ? '' : `<button class="ok" data-tomar-ex="${i}" aria-label="Marcar examen como tomado">Marcar como tomado</button>`}
         <button class="peligro" data-quitar-ex="${i}" aria-label="Quitar examen">Quitar</button>
       </span>
     </div>`).join('')}</div>`;
@@ -1268,7 +1269,7 @@ function plantillaListaExamenes(m) {
     ? `<div class="caja" style="margin-top:10px"><div class="caja-t">Ecografía</div>
     <div class="fila-ex fila-eco">
       <span class="det"><span class="etq ${ecoPend ? 'pendiente' : 'tomado'}">${ecoPend ? 'Pendiente' : 'Tomada'}</span>${ecoPend ? 'Ecografía por realizar' : 'Ecografía realizada'}</span>
-      ${ecoPend ? '<span class="acc-ex"><button class="ok" data-tomar-eco="1" aria-label="Marcar ecografía como tomada">Tomada</button></span>' : ''}
+      ${ecoPend ? '<span class="acc-ex"><button class="ok" data-tomar-eco="1" aria-label="Marcar ecografía como tomada">Marcar como tomada</button></span>' : ''}
     </div></div>`
     : '';
   return cajaEx + cajaEco;
