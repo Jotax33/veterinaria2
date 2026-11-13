@@ -160,6 +160,9 @@ details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 .etq.pendiente { background: var(--dia); color: #a85d00; border: 1px solid var(--dia-borde); }
 @media (prefers-color-scheme: dark) { .etq.pendiente { color: #ffc57a; } }
 .fila-ex button.peligro { padding: 4px 8px; font-size: .85rem; }
+.fila-ex .acc-ex { display: flex; gap: 4px; align-items: center; }
+.fila-ex button.ok { padding: 4px 10px; font-size: .85rem; background: var(--primary-soft); color: var(--primary); border-color: transparent; }
+.fila-eco { grid-template-columns: 1fr auto; }
 
 /* ---------- clínicos ---------- */
 .form-cl { border-radius: 14px; padding: 4px 14px 12px; border: 1px solid; transition: background .2s, border-color .2s; }
@@ -334,6 +337,11 @@ const nubeAgregarClinico = (id, c) => enviar(FB.updateDoc(refDe(id), { clinicos:
 const nubeEditarClinico = (id, viejo, nuevo) => {
   enviar(FB.updateDoc(refDe(id), { clinicos: FB.arrayUnion(limpiar(nuevo)), fechaModificacion: Date.now() }));
   enviar(FB.updateDoc(refDe(id), { clinicos: FB.arrayRemove(limpiar(viejo)) }));
+};
+// Marcar un examen pendiente como tomado (misma técnica: se agrega el nuevo y se quita el viejo)
+const nubeEditarExamen = (id, viejo, nuevo) => {
+  enviar(FB.updateDoc(refDe(id), { examenes: FB.arrayUnion(limpiar(nuevo)), fechaModificacion: Date.now() }));
+  enviar(FB.updateDoc(refDe(id), { examenes: FB.arrayRemove(limpiar(viejo)) }));
 };
 const nubeQuitar = (id, campo, item) => enviar(FB.updateDoc(refDe(id), { [campo]: FB.arrayRemove(limpiar(item)) }));
 const nubeBorrar = (id) => enviar(FB.deleteDoc(refDe(id)));
@@ -1244,13 +1252,25 @@ const borradorValido = (b) => !(b.alim === 'Sí' && !b.via) && !!(b.temp.trim() 
 
 function plantillaListaExamenes(m) {
   const lista = examenesOrdenados(m);
-  if (lista.length === 0) return '<div class="caja"><div class="caja-t">Exámenes</div><p class="vacio" style="margin:6px 0">Sin exámenes registrados.</p></div>';
-  return `<div class="caja"><div class="caja-t">Exámenes</div>${lista.map((e, i) => `
+  const cajaEx = lista.length === 0
+    ? '<div class="caja"><div class="caja-t">Exámenes</div><p class="vacio" style="margin:6px 0">Sin exámenes registrados.</p></div>'
+    : `<div class="caja"><div class="caja-t">Exámenes</div>${lista.map((e, i) => `
     <div class="fila-ex">
       <span>${e.estado === 'Tomados' ? '' : 'Se tomará el '}${formatearFecha(e.fecha)}</span>
       <span class="det"><span class="etq ${e.estado === 'Tomados' ? 'tomado' : 'pendiente'}">${e.estado === 'Tomados' ? 'Tomado' : 'Pendiente'}</span>${esc(e.detalle)}</span>
-      <button class="peligro" data-quitar-ex="${i}" aria-label="Quitar examen">Quitar</button>
+      <span class="acc-ex">
+        ${e.estado === 'Tomados' ? '' : `<button class="ok" data-tomar-ex="${i}" aria-label="Marcar examen como tomado">Tomado</button>`}
+        <button class="peligro" data-quitar-ex="${i}" aria-label="Quitar examen">Quitar</button>
+      </span>
     </div>`).join('')}</div>`;
+  const cajaEco = m.ecografia === 'Pendiente'
+    ? `<div class="caja" style="margin-top:10px"><div class="caja-t">Ecografía</div>
+    <div class="fila-ex fila-eco">
+      <span class="det"><span class="etq pendiente">Pendiente</span>Ecografía por realizar</span>
+      <span class="acc-ex"><button class="ok" data-tomar-eco="1" aria-label="Marcar ecografía como tomada">Tomada</button></span>
+    </div></div>`
+    : '';
+  return cajaEx + cajaEco;
 }
 
 const grupoSiNo = (k, titulo, valor) => `<fieldset><legend>${titulo}</legend>
@@ -1476,6 +1496,22 @@ function pantallaDetalle(id) {
       vista.tc = true; vista.fc = aISO(fecha); vista.tt = nuevo.turno;
       aviso('Clínico guardado');
       redibujar();
+      return;
+    }
+    if (b.dataset.tomarEx !== undefined) {
+      const e1 = examenesOrdenados(m)[Number(b.dataset.tomarEx)];
+      if (e1 && e1.estado !== 'Tomados' && confirm('¿Marcar este examen como tomado?')) {
+        nubeEditarExamen(id, e1, { ...e1, estado: 'Tomados', fecha: deISO(aISO(Date.now())) });
+        aviso('Examen marcado como tomado');
+      }
+      return;
+    }
+    if (b.dataset.tomarEco !== undefined) {
+      if (m.ecografia !== 'Pendiente') return;
+      const txt = prompt('Ecografía realizada. ¿Qué se vio? (opcional, puedes dejarlo vacío)');
+      if (txt === null) return; // canceló
+      nubeActualizar(id, { ecografia: 'Sí', hallazgosEcografia: txt.trim(), fechaModificacion: Date.now(), fichaModificada: Date.now() });
+      aviso('Ecografía marcada como tomada');
       return;
     }
     if (b.dataset.quitarEx !== undefined) {
