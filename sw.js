@@ -1,6 +1,6 @@
 // Service worker: deja la app disponible sin internet.
 // Si cambias index.html, sube el número de VERSION para que los teléfonos descarguen la versión nueva.
-const VERSION = 'veterinaria-v5';
+const VERSION = 'veterinaria-v6';
 const ARCHIVOS = [
   './',
   './index.html',
@@ -25,12 +25,17 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // Solo se encarga de los archivos de la app y del código de Firebase (versionado). Lo demás (datos, inicio de sesión) pasa directo.
+  const u = new URL(e.request.url);
+  const propio = u.origin === location.origin;
+  const sdk = u.origin === 'https://www.gstatic.com' && u.pathname.startsWith('/firebasejs/');
+  if (!propio && !sdk) return;
   e.respondWith(
     caches.match(e.request).then((guardado) => {
       if (guardado) return guardado;
       return fetch(e.request)
         .then((resp) => {
-          if (resp && resp.ok && new URL(e.request.url).origin === location.origin) {
+          if (resp && resp.ok) {
             const copia = resp.clone();
             caches.open(VERSION).then((c) => c.put(e.request, copia));
           }

@@ -69,7 +69,7 @@ h2 { font-size: 1.1rem; margin: 20px 0 8px; }
 /* ---------- formularios ---------- */
 .campo { display: block; margin-top: 14px; }
 .campo > span, legend { display: block; font-size: .85rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; padding: 0; }
-input[type=text], input[type=number], input[type=date], textarea, select {
+input[type=text], input[type=number], input[type=date], input[type=email], input[type=password], textarea, select {
   width: 100%;
   font: inherit; font-size: 16px; /* 16px evita el zoom automático en iPhone */
   color: var(--text);
@@ -159,8 +159,7 @@ details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 .etq.tomado { background: var(--primary-soft); color: var(--primary); }
 .etq.pendiente { background: var(--dia); color: #a85d00; border: 1px solid var(--dia-borde); }
 @media (prefers-color-scheme: dark) { .etq.pendiente { color: #ffc57a; } }
-.fila-ex button.peligro, .fila-ex button.txt { padding: 4px 8px; font-size: .85rem; }
-.acc-ex { display: flex; flex-wrap: wrap; gap: 2px; justify-content: flex-end; }
+.fila-ex button.peligro { padding: 4px 8px; font-size: .85rem; }
 
 /* ---------- clínicos ---------- */
 .form-cl { border-radius: 14px; padding: 4px 14px 12px; border: 1px solid; transition: background .2s, border-color .2s; }
@@ -201,6 +200,11 @@ nav a {
 nav a .ico { display: block; font-size: 1.35rem; line-height: 1.2; }
 nav a.activa { color: var(--primary); }
 
+body.sin-sesion nav { display: none; }
+.login { max-width: 380px; margin: 8vh auto 0; }
+#red { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 20; background: #8a5a00; color: #fff;
+  text-align: center; font-size: .85rem; padding: 4px 8px; }
+#red[hidden] { display: none; }
 #aviso {
   position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom));
   transform: translateX(-50%) translateY(20px);
@@ -215,14 +219,17 @@ nav a.activa { color: var(--primary); }
 <nav>
   <a href="#/ingreso" id="nav-ingreso"><span class="ico">＋</span>Ingreso</a>
   <a href="#/mascotas" id="nav-mascotas"><span class="ico">☰</span>Mascotas</a>
+  <a href="#/archivo" id="nav-archivo"><span class="ico">🗂</span>Archivo</a>
 </nav>
+<div id="red" hidden>Sin conexión: los cambios se enviarán al volver internet.</div>
 <div id="aviso" role="status" aria-live="polite"></div>
 
-<script>
+<script type="module">
 'use strict';
 
 /* =====================================================================
-   Base de datos local (IndexedDB): los datos quedan guardados en el teléfono
+   Base de datos antigua del teléfono (IndexedDB). Ya no se usa para guardar:
+   solo se lee para poder subir a la nube lo que se guardó con la versión anterior.
    ===================================================================== */
 const DB_NOMBRE = 'veterinaria';
 const STORE = 'mascotas';
@@ -247,11 +254,7 @@ function tx(modo, fn) {
     t.onabort = () => fallo(t.error);
   });
 }
-const dbTodas   = () => tx('readonly',  (s) => s.getAll());
-const dbAgregar = (m) => tx('readwrite', (s) => s.add(m));
-const dbGuardar = (m) => tx('readwrite', (s) => s.put(m));
-const dbBorrar  = (id) => tx('readwrite', (s) => s.delete(id));
-const dbVaciarYCargar = (lista) => tx('readwrite', (s) => { s.clear(); lista.forEach((m) => s.put(m)); });
+const dbTodas = () => tx('readonly', (s) => s.getAll());
 
 /**
  * Deja cada mascota con la forma actual. Las mascotas guardadas con versiones anteriores
@@ -268,22 +271,127 @@ function normalizarMascota(m) {
   delete m.estadoExamenes;
   delete m.examenesPorTomar;
   if (!Array.isArray(m.clinicos)) m.clinicos = [];
-  m.clinicos.forEach((c) => {
-    if (c.creado == null) c.creado = c.fecha;
-    if (!Array.isArray(c.alimentacion)) c.alimentacion = [];
-    if (c.orina == null) c.orina = '';
-    if (c.vomitos == null) c.vomitos = '';
-    if (c.defeca == null) c.defeca = '';
-  });
+  m.clinicos.forEach((c) => { if (c.creado == null) c.creado = c.fecha; });
   if (m.peso === undefined) m.peso = null;
+  // Última vez que se editó la FICHA (no cuenta agregar clínicos ni exámenes). Sirve para saber qué datos son más nuevos al importar.
+  if (m.fichaModificada === undefined) m.fichaModificada = m.fechaModificacion ?? m.fechaIngreso;
   return m;
 }
 
-/* Copia en memoria (así compartir es instantáneo, sin esperar a la base de datos) */
+/* =====================================================================
+   Nube (Firebase): inicio de sesión + base de datos Firestore que se sincroniza entre todos
+   ===================================================================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyBOv64h66BwFNUUHkILWyk5PPuOvRLZ4kA",
+  authDomain: "entregaturnosvet.firebaseapp.com",
+  projectId: "entregaturnosvet",
+  storageBucket: "entregaturnosvet.firebasestorage.app",
+  messagingSenderId: "506234993703",
+  appId: "1:506234993703:web:a1ee1df17a41bfb27b6202"
+};
+const FB_VERSION = '10.14.1';
+const urlFB = (n) => `https://www.gstatic.com/firebasejs/${FB_VERSION}/firebase-${n}.js`;
+let FB = null, fbAuth = null, fdb = null, usuario = null, desuscribir = null;
+let listo = false;            // ya llegaron los datos de la nube (o de la copia guardada en el teléfono)
+let localAntiguo = [];        // mascotas que quedaron guardadas solo en este teléfono (versión anterior)
+let ocultarLocal = false;
+
+async function cargarFirebase() {
+  if (window.__FB_MOCK) return window.__FB_MOCK; // solo para pruebas
+  const [a, b, c] = await Promise.all([import(urlFB('app')), import(urlFB('auth')), import(urlFB('firestore'))]);
+  return { ...a, ...b, ...c };
+}
+
+function hashTexto(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+/** Identificador de la ficha: sale del nombre + especie + día de ingreso. Así, si dos personas crean al mismo paciente, es UNA sola ficha. */
+const idPara = (m) => 'm' + hashTexto(claveMascota(m));
+const limpiar = (o) => JSON.parse(JSON.stringify(o)); // Firestore no acepta "undefined"
+const refDe = (id) => FB.doc(fdb, 'mascotas', id);
+function enviar(promesa) {
+  Promise.resolve(promesa).catch((e) => {
+    console.error(e);
+    alert('No se pudo guardar en la nube (' + ((e && e.code) || 'error') + '). Revisa tu conexión o tus permisos.');
+  });
+}
+const nubeCrear = (m) => { const { id, ...resto } = m; enviar(FB.setDoc(refDe(idPara(m)), limpiar(resto))); };
+const nubeActualizar = (id, campos) => enviar(FB.updateDoc(refDe(id), limpiar(campos)));
+const nubeAgregarClinico = (id, c) => enviar(FB.updateDoc(refDe(id), { clinicos: FB.arrayUnion(limpiar(c)), fechaModificacion: Date.now() }));
+const nubeQuitar = (id, campo, item) => enviar(FB.updateDoc(refDe(id), { [campo]: FB.arrayRemove(limpiar(item)) }));
+const nubeBorrar = (id) => enviar(FB.deleteDoc(refDe(id)));
+
+/* Copia en memoria de lo que hay en la nube (se actualiza sola cuando alguien cambia algo) */
 let mascotas = [];
-async function recargar() {
-  mascotas = (await dbTodas()).map(normalizarMascota)
-    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+const mascotasActivas = () => mascotas.filter((m) => m.estado !== 'alta');
+
+function suscribir() {
+  listo = false;
+  desuscribir = FB.onSnapshot(FB.collection(fdb, 'mascotas'), (snap) => {
+    mascotas = snap.docs.map((d) => normalizarMascota({ ...d.data(), id: d.id }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+    const primera = !listo;
+    listo = true;
+    refrescar(primera);
+  }, (e) => {
+    console.error(e);
+    app.innerHTML = '<h1>No se pudieron leer los datos</h1><p>' + esc((e && e.code) || 'error') + '. Si dice "permission-denied", revisa las reglas de Firestore.</p>';
+  });
+}
+
+/** Vuelve a dibujar la pantalla cuando llegan cambios de otra persona, salvo que estés escribiendo. */
+function refrescar(forzar = false) {
+  if (!usuario || !listo) return;
+  if (forzar) { render(); return; }
+  const seccion = (location.hash || '#/ingreso').split('/')[1];
+  if (seccion === 'ingreso' || seccion === 'editar') return;
+  const a = document.activeElement;
+  if (a && app.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+  const imp = document.getElementById('panel-imp');
+  if (imp && imp.innerHTML.trim()) return;
+  render();
+}
+
+function pantallaLogin(mensaje = '') {
+  document.body.classList.add('sin-sesion');
+  app.onclick = null; app.oninput = null; app.onchange = null;
+  app.innerHTML = `
+    <div class="login">
+      <h1>Veterinaria</h1>
+      <p class="vacio">Inicia sesión para ver a los pacientes.</p>
+      <form id="f-login" novalidate>
+        <label class="campo"><span>Correo</span><input type="email" id="lg-mail" autocomplete="username" autocapitalize="none" inputmode="email"></label>
+        <label class="campo"><span>Contraseña</span><input type="password" id="lg-pass" autocomplete="current-password"></label>
+        <p class="err" id="lg-err" ${mensaje ? '' : 'hidden'}>${esc(mensaje)}</p>
+        <div class="acciones"><button type="submit" id="lg-ok">Entrar</button></div>
+      </form>
+    </div>`;
+  document.getElementById('f-login').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const mail = document.getElementById('lg-mail').value.trim();
+    const pass = document.getElementById('lg-pass').value;
+    const err = document.getElementById('lg-err');
+    if (!mail || !pass) { err.textContent = 'Escribe tu correo y tu contraseña.'; err.hidden = false; return; }
+    const ok = document.getElementById('lg-ok');
+    ok.disabled = true;
+    try {
+      await FB.signInWithEmailAndPassword(fbAuth, mail, pass);
+    } catch (e) {
+      const c = (e && e.code) || '';
+      err.textContent = /network/.test(c) ? 'Sin conexión. Revisa tu internet e inténtalo de nuevo.'
+        : /too-many/.test(c) ? 'Demasiados intentos. Espera unos minutos.'
+        : 'Correo o contraseña incorrectos.';
+      err.hidden = false;
+      ok.disabled = false;
+    }
+  };
 }
 
 /* =====================================================================
@@ -329,24 +437,6 @@ const OPCIONES_RESULTADOS = ['Negativo', 'SIDA', 'Leucemia'];
 const resultadosATexto = (sel) => OPCIONES_RESULTADOS.filter((o) => sel.includes(o)).join(', ');
 const textoAResultados = (t) => (t || '').split(',').map((x) => x.trim()).filter(Boolean);
 const textoPeso = (kg) => String(kg).replace('.', ',') + ' kg';
-const textoDecimal = (v) => String(v ?? '').replace('.', ',');
-const CAMPOS_ENTEROS = ['glicemia', 'pas', 'pam', 'pad'];
-const soloEnteros = (t) => t.replace(/\D/g, '');
-function soloDecimal(t) { // dígitos y un único separador decimal (coma o punto)
-  const r = t.replace(/[^\d.,]/g, '');
-  const i = r.search(/[.,]/);
-  return i === -1 ? r : r.slice(0, i + 1) + r.slice(i + 1).replace(/[.,]/g, '');
-}
-const esNum = (v, decimal) => v === '' || (decimal ? /^\d+([.,]\d+)?$/ : /^\d+$/).test(v);
-
-/** Un examen pendiente desaparece si ya hay uno tomado con el mismo detalle en la misma fecha o después. */
-function consolidarExamenes(lista) {
-  const quitar = (t) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-  return lista
-    .filter((e) => e.estado !== 'Pendientes' ||
-      !lista.some((x) => x.estado === 'Tomados' && quitar(x.detalle) === quitar(e.detalle) && x.fecha >= e.fecha))
-    .sort((a, b) => a.fecha - b.fecha);
-}
 
 let avisoTimer;
 function aviso(texto) {
@@ -414,7 +504,7 @@ function aMascota(s, base) {
     infeccioso: s.infeccioso,
     retrovirales: gato ? (s.retrovirales || null) : null,
     resultadosRetrovirales: gato && s.retrovirales === 'Sí' ? resultadosATexto(s.resultados) : '',
-    examenes: consolidarExamenes(examenes),
+    examenes,
     clinicos: base.clinicos || [],
     ecografia: s.ecografia || null,
     hallazgosEcografia: s.ecografia === 'Sí' ? s.hallazgosEcografia.trim() : '',
@@ -474,7 +564,7 @@ function plantillaFormulario(s, modo) {
     ${grupoRadio('estadoExamenes', 'Exámenes', ['Tomados', 'Pendientes', 'No'], s.estadoExamenes)}
     ${modo === 'editar' ? '<p class="ayuda">Los exámenes ya registrados se ven en el detalle. Aquí puedes agregar uno nuevo.</p>' : ''}
     ${titExamenes ? `
-      <label class="campo"><span>${s.estadoExamenes === 'Tomados' ? 'Fecha en que se tomaron' : 'Indique la fecha en que se deben de tomar los exámenes'}</span>
+      <label class="campo"><span>${s.estadoExamenes === 'Tomados' ? 'Fecha en que se tomaron' : 'Fecha de los exámenes pendientes'}</span>
         <input type="date" data-k="fechaExamenes" value="${esc(s.fechaExamenes)}"></label>
       ${campoTexto('examenesPorTomar', titExamenes, s.examenesPorTomar, {
         errId: 'err-ex', errTexto: 'Obligatorio si los exámenes están Tomados o Pendientes', error: v.examenesFalta })}` : ''}
@@ -566,13 +656,14 @@ const clinicosOrdenados = (m) => [...m.clinicos].sort((a, b) => a.fecha - b.fech
 const examenesOrdenados = (m) => [...m.examenes].sort((a, b) => a.fecha - b.fecha);
 
 function generarTextoExportacion(todos = false) {
-  if (mascotas.length === 0) return 'No hay mascotas registradas.';
+  const activas = mascotasActivas();
+  if (activas.length === 0) return 'No hay mascotas registradas.';
   const corte = todos ? 0 : leerCorte();
   const hoy = formatearFecha(Date.now());
 
-  const infecciosos = mascotas.filter((m) => m.infeccioso)
+  const infecciosos = activas.filter((m) => m.infeccioso)
     .sort((a, b) => a.especie.localeCompare(b.especie, 'es'));
-  const resto = mascotas.filter((m) => !m.infeccioso);
+  const resto = activas.filter((m) => !m.infeccioso);
   const grupos = [
     ['🐱 GATOS', resto.filter((m) => m.especie === 'Gato')],
     ['🐶 PERROS', resto.filter((m) => m.especie === 'Perro')],
@@ -580,7 +671,7 @@ function generarTextoExportacion(todos = false) {
   ];
 
   const L = [];
-  L.push(`🐾 MASCOTAS REGISTRADAS (${mascotas.length})`);
+  L.push(`🐾 MASCOTAS REGISTRADAS (${activas.length})`);
   L.push(`Compartido: ${hoy}`);
   L.push('');
   let n = 1;
@@ -591,7 +682,9 @@ function generarTextoExportacion(todos = false) {
     for (const m of lista) {
       L.push(`${n}. ${m.nombre}`); n++;
       L.push(`   Ingreso: ${formatearFecha(m.fechaIngreso)}`);
-      if (m.fechaModificacion != null) L.push(`   Turno: ${hoy}`);
+      // Fecha y hora de la última modificación de la ficha: al importar sirve para saber qué datos son más recientes
+      if (m.fechaModificacion != null) L.push(`   Turno: ${formatearFechaHora(m.fechaModificacion)}`);
+      if (m.fichaModificada != null) L.push(`   Ficha editada: ${formatearFechaHora(m.fichaModificada)}`);
       L.push(`   Especie: ${m.especie}`);
       L.push(`   Raza: ${m.raza ?? 'Sin raza'}`);
       L.push(`   Edad: ${formatearEdad(m.edad)}`);
@@ -614,18 +707,13 @@ function generarTextoExportacion(todos = false) {
       for (const c of clinicosOrdenados(m).filter((x) => x.creado > corte)) {
         L.push(`   Clínico ${formatearFechaHora(c.fecha)} (${c.turno})`);
         const signos = [];
-        if (c.temp) signos.push(`Temp: ${textoDecimal(c.temp)} °C`);
+        if (c.temp) signos.push(`Temp: ${c.temp} °C`);
         if (c.glicemia) signos.push(`Glicemia: ${c.glicemia}`);
         if (c.pas) signos.push(`PAS: ${c.pas}`);
         if (c.pam) signos.push(`PAM: ${c.pam}`);
         if (c.pad) signos.push(`PAD: ${c.pad}`);
         if (signos.length) L.push(`      ${signos.join(' | ')}`);
         if (c.alimentacion.length) L.push(`      Alimentación: ${c.alimentacion.join(', ')}`);
-        const ov = [];
-        if (c.orina) ov.push(`Orina: ${c.orina}`);
-        if (c.vomitos) ov.push(`Vómitos: ${c.vomitos}`);
-        if (ov.length) L.push(`      ${ov.join(' | ')}`);
-        if (c.defeca) L.push(`      Defeca: ${c.defeca}`);
         if (c.orinaDeposiciones) L.push(`      Orina/deposiciones: ${c.orinaDeposiciones}`);
         if (c.comentarios) L.push(`      Comentarios del turno: ${c.comentarios}`);
       }
@@ -673,7 +761,7 @@ async function copiarTexto() {
 const sinAcentos = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 const ETIQUETAS = {
-  'ingreso': 'ingreso', 'turno': 'turno', 'especie': 'especie', 'raza': 'raza', 'edad': 'edad', 'peso': 'peso',
+  'ingreso': 'ingreso', 'turno': 'turno', 'ficha editada': 'ficha', 'especie': 'especie', 'raza': 'raza', 'edad': 'edad', 'peso': 'peso',
   'motivo de ingreso': 'motivo', 'diagnostico': 'diagnostico', 'infeccioso': 'infeccioso',
   'retrovirales': 'retro', 'resultados retrovirales': 'resretro',
   'examenes': 'examenes', 'examenes tomados': 'ex_tomados',
@@ -683,8 +771,7 @@ const ETIQUETAS = {
 };
 const ETIQUETAS_CLINICO = {
   'temp': 'temp', 'glicemia': 'glicemia', 'pas': 'pas', 'pam': 'pam', 'pad': 'pad',
-  'alimentacion': 'alimentacion', 'orina': 'orina', 'vomitos': 'vomitos', 'defeca': 'defeca',
-  'orina/deposiciones': 'orinadep', 'comentarios del turno': 'coment'
+  'alimentacion': 'alimentacion', 'orina/deposiciones': 'orina', 'comentarios del turno': 'coment'
 };
 
 function fechaDeTexto(t) {
@@ -692,6 +779,15 @@ function fechaDeTexto(t) {
   if (!m) return null;
   const d = new Date(+m[3], +m[2] - 1, +m[1], 12, 0);
   return d.getMonth() === +m[2] - 1 && d.getDate() === +m[1] ? d.getTime() : null;
+}
+/** "13/11/2026 01:15" -> {ms, conHora:true}; "13/11/2026" (mensajes antiguos) -> {ms al mediodía, conHora:false} */
+function fechaHoraDeTexto(t) {
+  const m = /(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/.exec(t || '');
+  if (!m) return null;
+  const conHora = m[4] !== undefined;
+  const d = new Date(+m[3], +m[2] - 1, +m[1], conHora ? +m[4] : 12, conHora ? +m[5] : 0);
+  if (d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[1]) return null;
+  return { ms: d.getTime(), conHora };
 }
 function edadDeTexto(t) {
   const n = sinAcentos(t);
@@ -751,7 +847,7 @@ function parsearMensaje(texto) {
       if (mh) {
         const f = new Date(+mh[3], +mh[2] - 1, +mh[1], +mh[4], +mh[5], 0, 0).getTime();
         cur = { fecha: f, creado: Date.now(), turno: mh[6] === 'noche' ? 'Noche' : 'Día', temp: '', glicemia: '',
-                pas: '', pam: '', pad: '', alimentacion: [], orina: '', vomitos: '', defeca: '', comentarios: '' };
+                pas: '', pam: '', pad: '', alimentacion: [], orinaDeposiciones: '', comentarios: '' };
         clins.push(cur); ref = null; blancos = 0;
         continue;
       }
@@ -763,14 +859,9 @@ function parsearMensaje(texto) {
           if (!clave) continue;
           reconocido = true;
           const v = seg.slice(p + 1).trim();
-          if (['temp', 'glicemia', 'pas', 'pam', 'pad'].includes(clave)) {
-            const num = v.replace(/\s*°\s*c\s*$/i, '').trim();
-            cur[clave] = clave === 'temp' ? num.replace(',', '.') : num; ref = null;
-          }
+          if (['temp', 'glicemia', 'pas', 'pam', 'pad'].includes(clave)) { cur[clave] = v.replace(/\s*°\s*c\s*$/i, '').trim(); ref = null; }
           else if (clave === 'alimentacion') { const nv = sinAcentos(v); cur.alimentacion = ['Boca', 'Sonda'].filter((x) => nv.includes(sinAcentos(x))); ref = null; }
-          else if (clave === 'orina' || clave === 'vomitos') { const o = opcionSiNoPendiente(v); cur[clave] = o === 'Sí' || o === 'No' ? o : ''; ref = null; }
-          else if (clave === 'defeca') { cur.defeca = v; ref = { o: cur, k: 'defeca' }; }
-          else if (clave === 'orinadep') { cur.orinaDeposiciones = v; ref = { o: cur, k: 'orinaDeposiciones' }; }
+          else if (clave === 'orina') { cur.orinaDeposiciones = v; ref = { o: cur, k: 'orinaDeposiciones' }; }
           else if (clave === 'coment') { cur.comentarios = v; ref = { o: cur, k: 'comentarios' }; }
         }
         if (reconocido) blancos = 0; else pegar(l);
@@ -811,6 +902,8 @@ function parsearMensaje(texto) {
 
     const retro = gato ? opcionSiNoPendiente(c.retro) : null;
     const eco = opcionSiNoPendiente(c.eco);
+    const turno = fechaHoraDeTexto(c.turno);
+    const ficha = fechaHoraDeTexto(c.ficha);
 
     resultado.push({
       nombre, especie,
@@ -829,7 +922,9 @@ function parsearMensaje(texto) {
       enAyuno: esSi(c.ayuno),
       comentarios: c.comentarios || '',
       fechaIngreso,
-      fechaModificacion: fechaDeTexto(c.turno)
+      fechaModificacion: turno ? turno.ms : null,
+      modificacionPrecisa: !!(turno && turno.conHora), // solo se usa al importar; no se guarda
+      fichaModificada: ficha && ficha.conHora ? ficha.ms : null // null = mensaje antiguo, no se sabe cuándo se editó la ficha
     });
   });
   return { mascotas: resultado, ignoradas };
@@ -839,37 +934,66 @@ function parsearMensaje(texto) {
 const claveMascota = (m) => `${sinAcentos(m.nombre)}|${sinAcentos(m.especie)}|${formatearFecha(m.fechaIngreso)}`;
 const claveExamen = (e) => `${e.estado}|${formatearFecha(e.fecha)}|${sinAcentos(e.detalle)}`;
 
-/** Si la mascota ya existe, se UNEN los clínicos y exámenes (no se borra nada); si no, se crea. */
+/**
+ * Mezcla los datos de la ficha de una mascota que ya existe con los del mensaje importado.
+ * - Si la ficha del mensaje se editó DESPUÉS que la tuya: gana el mensaje, salvo en los campos que vengan vacíos
+ *   (un campo vacío nunca borra un dato tuyo).
+ * - Si es más vieja o no se puede saber: se conserva lo tuyo y solo se rellenan los campos que tenías vacíos.
+ * Agregar clínicos o exámenes no cuenta como editar la ficha, así que no hace que unos datos viejos pasen por nuevos.
+ */
+function mezclarFicha(ya, m) {
+  const fichaLocal = ya.fichaModificada ?? ya.fechaModificacion ?? ya.fechaIngreso;
+  const masNuevo = m.fichaModificada != null && m.fichaModificada > fichaLocal;
+  const vacio = (v) => v == null || v === '';
+  const campo = (k) => (masNuevo ? (vacio(m[k]) ? ya[k] : m[k]) : (vacio(ya[k]) ? m[k] : ya[k]));
+  const par = (k1, k2) => { // dos datos que van juntos (ej.: ecografía y lo que se vio)
+    const f = masNuevo ? (vacio(m[k1]) ? ya : m) : (vacio(ya[k1]) ? m : ya);
+    return { [k1]: f[k1], [k2]: f[k2] };
+  };
+  const mods = [ya.fechaModificacion, m.modificacionPrecisa ? m.fechaModificacion : null].filter((x) => x != null);
+  return {
+    raza: campo('raza'), peso: campo('peso'),
+    motivoIngreso: campo('motivoIngreso'), diagnostico: campo('diagnostico'), comentarios: campo('comentarios'),
+    edad: Math.max(ya.edad, m.edad),                                        // la edad no baja
+    infeccioso: masNuevo ? m.infeccioso : (ya.infeccioso || m.infeccioso),  // ante la duda se mantiene la alerta
+    enAyuno: masNuevo ? m.enAyuno : ya.enAyuno,
+    ...par('retrovirales', 'resultadosRetrovirales'),
+    ...par('ecografia', 'hallazgosEcografia'),
+    fichaModificada: Math.max(fichaLocal, m.fichaModificada ?? 0),
+    fechaModificacion: mods.length ? Math.max(...mods) : (ya.fechaModificacion ?? m.fechaModificacion ?? null)
+  };
+}
+
+/** Si la mascota ya existe, se UNEN clínicos y exámenes y se mezcla la ficha (no se pierde nada tuyo); si no, se crea. */
 async function importarMascotas(lista) {
   const existentes = new Map(mascotas.map((m) => [claveMascota(m), m]));
   let nuevas = 0, actualizadas = 0, clinicosNuevos = 0;
-  for (const m of lista) {
+  for (const { modificacionPrecisa, id: _id, ...m } of lista) {
     const ya = existentes.get(claveMascota(m));
     if (ya) {
-      const porFecha = new Map(ya.clinicos.map((c) => [c.fecha, c]));
-      for (const c of m.clinicos) {
-        if (!porFecha.has(c.fecha)) clinicosNuevos++;
-        porFecha.set(c.fecha, porFecha.get(c.fecha) ? { ...c, creado: porFecha.get(c.fecha).creado } : c);
-      }
-      const porClave = new Map(ya.examenes.map((e) => [claveExamen(e), e]));
-      for (const e of m.examenes) if (!porClave.has(claveExamen(e))) porClave.set(claveExamen(e), e);
-      await dbGuardar({
-        ...m, id: ya.id, fechaIngreso: ya.fechaIngreso,
-        clinicos: [...porFecha.values()].sort((a, b) => a.fecha - b.fecha),
-        examenes: consolidarExamenes([...porClave.values()])
-      });
+      const fechas = new Set(ya.clinicos.map((c) => c.fecha));
+      const nuevosCl = [];
+      for (const c of m.clinicos) if (!fechas.has(c.fecha)) { fechas.add(c.fecha); nuevosCl.push(c); clinicosNuevos++; } // un clínico que ya tienes no se toca
+      const claves = new Set(ya.examenes.map(claveExamen));
+      const nuevosEx = [];
+      for (const e of m.examenes) if (!claves.has(claveExamen(e))) { claves.add(claveExamen(e)); nuevosEx.push(e); }
+      const upd = limpiar(mezclarFicha(ya, { ...m, modificacionPrecisa }));
+      if (nuevosCl.length) upd.clinicos = FB.arrayUnion(...nuevosCl.map(limpiar));
+      if (nuevosEx.length) upd.examenes = FB.arrayUnion(...nuevosEx.map(limpiar));
+      enviar(FB.updateDoc(refDe(ya.id), upd));
       actualizadas++;
     } else {
-      await dbAgregar(m);
+      const nueva = { ...normalizarMascota(m), estado: 'hospitalizado' };
+      nubeCrear(nueva);
+      existentes.set(claveMascota(nueva), { ...nueva, id: idPara(nueva) });
       nuevas++; clinicosNuevos += m.clinicos.length;
     }
   }
-  await recargar();
   return { nuevas, actualizadas, clinicosNuevos };
 }
 
 /* =====================================================================
-   Respaldo (como los datos viven solo en este teléfono, conviene guardar una copia)
+   Respaldo (una copia propia por si algún día hace falta)
    ===================================================================== */
 function descargarRespaldo() {
   const datos = JSON.stringify({ app: 'veterinaria', version: 2, fecha: new Date().toISOString(), mascotas }, null, 2);
@@ -884,11 +1008,9 @@ async function restaurarRespaldo(archivo) {
   try {
     const json = JSON.parse(await archivo.text());
     if (json.app !== 'veterinaria' || !Array.isArray(json.mascotas)) throw new Error('formato');
-    if (!confirm(`Esto reemplaza las ${mascotas.length} mascotas actuales por las ${json.mascotas.length} del respaldo. ¿Continuar?`)) return;
-    await dbVaciarYCargar(json.mascotas.map(normalizarMascota));
-    await recargar();
-    aviso('Respaldo restaurado');
-    render();
+    if (!confirm(`El respaldo tiene ${json.mascotas.length} mascotas. Se agregarán a la nube lo que falte; no se borra nada de lo que ya hay. ¿Continuar?`)) return;
+    const r = await importarMascotas(json.mascotas.map((m) => ({ ...normalizarMascota(m), modificacionPrecisa: true })));
+    aviso(`Respaldo restaurado: ${r.nuevas} nuevas, ${r.actualizadas} ya existían`);
   } catch {
     alert('El archivo no es un respaldo válido de esta app.');
   }
@@ -903,8 +1025,12 @@ let formIngreso = estadoVacio(); // se conserva si cambias de pestaña y vuelves
 function pantallaIngreso() {
   app.innerHTML = '<h1>Nueva mascota</h1><div id="form"></div>';
   montarFormulario(document.getElementById('form'), formIngreso, 'nuevo', async (s) => {
-    await dbAgregar(aMascota(s, {}));
-    await recargar();
+    const nueva = { ...aMascota(s, {}), fichaModificada: Date.now(), estado: 'hospitalizado' };
+    if (mascotas.some((x) => x.id === idPara(nueva))) {
+      alert('Ya existe una mascota con ese nombre, especie y fecha de ingreso (puede estar en el Archivo). Revisa el nombre o la fecha.');
+      return;
+    }
+    nubeCrear(nueva);
     aviso('Mascota guardada');
     Object.assign(formIngreso, estadoVacio());
     window.scrollTo(0, 0);
@@ -915,17 +1041,27 @@ function pantallaIngreso() {
 function textoInfoExport() {
   const todos = quiereTodos();
   const corte = leerCorte();
-  const total = mascotas.reduce((a, m) => a + m.clinicos.length, 0);
-  const nuevos = mascotas.reduce((a, m) => a + m.clinicos.filter((c) => c.creado > corte).length, 0);
+  const activas = mascotasActivas();
+  const total = activas.reduce((a, m) => a + m.clinicos.length, 0);
+  const nuevos = activas.reduce((a, m) => a + m.clinicos.filter((c) => c.creado > corte).length, 0);
   if (todos) return `Se exportarán todos los clínicos (${total}).`;
   return `Se exportarán solo los clínicos nuevos: ${nuevos}` +
     (corte ? ` (desde la última exportación, ${formatearFechaHora(corte)}).` : ' (aún no has exportado).');
 }
 
+function htmlBannerLocal() {
+  if (!localAntiguo.length || ocultarLocal) return '';
+  const n = localAntiguo.length;
+  return `<div class="panel"><h2>Datos de este teléfono</h2>
+    <p class="vacio" style="margin:0 0 8px">Hay ${n} mascota${n === 1 ? '' : 's'} guardada${n === 1 ? '' : 's'} solo en este teléfono (de la versión anterior). ¿Subirlas a la nube para que las vea todo el equipo?</p>
+    <div class="acciones" style="margin-top:0"><button id="btn-subir-local">Subir a la nube</button><button class="txt" id="btn-local-no">Ahora no</button></div></div>`;
+}
+
 function pantallaLista() {
+  const activas = mascotasActivas();
   const marcado = quiereTodos();
-  const tarjetas = mascotas.map((m) => `
-    <div class="tarjeta" data-id="${m.id}">
+  const tarjetas = activas.map((m) => `
+    <div class="tarjeta" data-id="${esc(m.id)}">
       <div class="info">
         <div class="nombre">${esc(m.nombre)}</div>
         <div>${esc(m.especie)} · ${esc(m.raza ?? 'Sin raza')} · ${esc(formatearEdad(m.edad))}${m.peso != null ? ' · ' + esc(textoPeso(m.peso)) : ''}</div>
@@ -934,23 +1070,25 @@ function pantallaLista() {
         ${m.enAyuno ? '<div class="alerta">⚠ En ayuno</div>' : ''}
         ${m.diagnostico ? `<div>Diagnóstico: ${esc(m.diagnostico)}</div>` : ''}
       </div>
-      <button class="peligro" data-borrar="${m.id}">Borrar</button>
+      <button class="peligro" data-borrar="${esc(m.id)}">Borrar</button>
     </div>`).join('');
 
   app.innerHTML = `
-    <h1>Mascotas registradas (${mascotas.length})</h1>
+    <h1>Mascotas hospitalizadas (${activas.length})</h1>
+    <p class="ayuda" style="margin:0 0 6px">Sesión: ${esc(usuario ? usuario.email : '')} · <button class="txt" id="btn-salir" style="padding:2px 6px">Salir</button></p>
+    ${htmlBannerLocal()}
     <div class="barra">
-      <button id="btn-wsp" ${mascotas.length ? '' : 'disabled'}>Exportar a WhatsApp</button>
-      <button id="btn-copiar" class="sec" ${mascotas.length ? '' : 'disabled'}>Copiar texto</button>
+      <button id="btn-wsp" ${activas.length ? '' : 'disabled'}>Exportar a WhatsApp</button>
+      <button id="btn-copiar" class="sec" ${activas.length ? '' : 'disabled'}>Copiar texto</button>
       <button id="btn-imp" class="sec">Importar mensaje</button>
     </div>
     <label class="opt opcion-export"><input type="checkbox" id="chk-todos" ${marcado ? 'checked' : ''}><span>Incluir todos los clínicos (no solo los nuevos)</span></label>
     <p class="vacio" id="info-export">${esc(textoInfoExport())}</p>
     <div id="panel-imp"></div>
-    ${mascotas.length ? tarjetas : '<p class="vacio">Todavía no hay mascotas. Agrega una en la pestaña Ingreso.</p>'}
+    ${activas.length ? tarjetas : '<p class="vacio">No hay mascotas hospitalizadas. Agrega una en la pestaña Ingreso.</p>'}
     <details class="respaldo">
       <summary>Copia de seguridad</summary>
-      <p>Tus datos se guardan solo en este teléfono. Descarga un respaldo de vez en cuando; si cambias de teléfono o se borran los datos del navegador, podrás restaurarlo.</p>
+      <p>Los datos están en la nube y todo el equipo los ve al instante. Puedes descargar una copia propia de vez en cuando (incluye también el Archivo).</p>
       <div class="acciones" style="margin-top:8px">
         <button class="sec" id="btn-resp-bajar" ${mascotas.length ? '' : 'disabled'}>Descargar respaldo</button>
         <button class="sec" id="btn-resp-subir">Restaurar respaldo</button>
@@ -961,6 +1099,7 @@ function pantallaLista() {
   document.getElementById('btn-wsp').onclick = compartirTexto;
   document.getElementById('btn-copiar').onclick = copiarTexto;
   document.getElementById('btn-imp').onclick = abrirPanelImportar;
+  document.getElementById('btn-salir').onclick = () => { if (confirm('¿Cerrar sesión?')) FB.signOut(fbAuth); };
   document.getElementById('chk-todos').onchange = () => {
     document.getElementById('info-export').textContent = textoInfoExport();
   };
@@ -968,17 +1107,72 @@ function pantallaLista() {
   const inp = document.getElementById('archivo-resp');
   document.getElementById('btn-resp-subir').onclick = () => inp.click();
   inp.onchange = () => { if (inp.files[0]) restaurarRespaldo(inp.files[0]); inp.value = ''; };
+  const bs = document.getElementById('btn-subir-local');
+  if (bs) {
+    bs.onclick = async () => {
+      bs.disabled = true;
+      const r = await importarMascotas(localAntiguo);
+      try { localStorage.setItem('vet_local_subido', '1'); } catch { /* nada */ }
+      localAntiguo = [];
+      aviso(`Subidas: ${r.nuevas} nueva${r.nuevas === 1 ? '' : 's'}, ${r.actualizadas} ya existía${r.actualizadas === 1 ? '' : 'n'}`);
+      pantallaLista();
+    };
+    document.getElementById('btn-local-no').onclick = () => { ocultarLocal = true; pantallaLista(); };
+  }
 
-  app.onclick = async (e) => {
+  app.onclick = (e) => {
     const borrar = e.target.closest('[data-borrar]');
     if (borrar) {
       e.stopPropagation();
-      const m = mascotas.find((x) => x.id === Number(borrar.dataset.borrar));
-      if (m && confirm(`¿Borrar a ${m.nombre}? Esta acción no se puede deshacer.`)) {
-        await dbBorrar(m.id);
-        await recargar();
-        pantallaLista();
-      }
+      const m = mascotas.find((x) => x.id === borrar.dataset.borrar);
+      if (m && confirm(`¿Borrar a ${m.nombre}? Se borra para todo el equipo y no se puede deshacer. (Si solo se fue de alta, usa "Dar de alta" en su ficha.)`)) nubeBorrar(m.id);
+      return;
+    }
+    const t = e.target.closest('.tarjeta');
+    if (t) location.hash = '#/detalle/' + t.dataset.id;
+  };
+}
+
+let busquedaArchivo = '';
+function pantallaArchivo() {
+  app.innerHTML = `
+    <h1>Archivo de altas</h1>
+    <p class="ayuda">Pacientes dados de alta. No salen en la lista diaria ni en el mensaje de WhatsApp, pero se conservan para consultar.</p>
+    <label class="campo"><span>Buscar por nombre</span><input type="text" id="busq" value="${esc(busquedaArchivo)}" placeholder="Nombre" autocomplete="off"></label>
+    <div id="lista-arch"></div>`;
+  const pintar = () => {
+    const q = sinAcentos(busquedaArchivo);
+    const altas = mascotas.filter((m) => m.estado === 'alta' && sinAcentos(m.nombre).includes(q))
+      .sort((a, b) => (b.fechaAlta || 0) - (a.fechaAlta || 0));
+    document.getElementById('lista-arch').innerHTML = altas.length ? altas.map((m) => `
+      <div class="tarjeta" data-id="${esc(m.id)}">
+        <div class="info">
+          <div class="nombre">${esc(m.nombre)}</div>
+          <div>${esc(m.especie)} · ${esc(m.raza ?? 'Sin raza')}</div>
+          <div>Ingreso: ${formatearFecha(m.fechaIngreso)}${m.fechaAlta ? ' · Alta: ' + formatearFecha(m.fechaAlta) : ''}</div>
+          ${m.diagnostico ? `<div>Diagnóstico: ${esc(m.diagnostico)}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <button class="txt" data-reingresar="${esc(m.id)}">Reingresar</button>
+          <button class="peligro" data-borrar="${esc(m.id)}">Borrar</button>
+        </div>
+      </div>`).join('') : `<p class="vacio">${mascotas.some((m) => m.estado === 'alta') ? 'Ninguna coincide con la búsqueda.' : 'Todavía no hay pacientes dados de alta.'}</p>`;
+  };
+  pintar();
+  document.getElementById('busq').oninput = (e) => { busquedaArchivo = e.target.value; pintar(); };
+  app.onclick = (e) => {
+    const re = e.target.closest('[data-reingresar]');
+    if (re) {
+      e.stopPropagation();
+      nubeActualizar(re.dataset.reingresar, { estado: 'hospitalizado', fechaAlta: null });
+      aviso('Paciente reingresado');
+      return;
+    }
+    const borrar = e.target.closest('[data-borrar]');
+    if (borrar) {
+      e.stopPropagation();
+      const m = mascotas.find((x) => x.id === borrar.dataset.borrar);
+      if (m && confirm(`¿Borrar a ${m.nombre} del archivo? Se borra para todo el equipo y no se puede deshacer.`)) nubeBorrar(m.id);
       return;
     }
     const t = e.target.closest('.tarjeta');
@@ -1019,7 +1213,7 @@ function revisarImportacion(texto) {
     <fieldset>${halladas.map((m, i) => `
       <label class="opt"><input type="checkbox" data-imp="${i}" checked>
         <span>${esc(m.nombre)} · ${esc(m.especie)}<br>
-        <small>${claves.has(claveMascota(m)) ? 'Ya existe: se actualiza y se agregan los clínicos nuevos' : '<span class="nueva">Nueva</span>'}
+        <small>${claves.has(claveMascota(m)) ? 'Ya existe: se agrega lo que te falta y se conservan tus datos más recientes' : '<span class="nueva">Nueva</span>'}
         · ${m.clinicos.length} clínico${m.clinicos.length === 1 ? '' : 's'} en el mensaje</small></span></label>`).join('')}
     </fieldset>
     ${ignoradas ? `<p class="alerta">${ignoradas} entrada${ignoradas === 1 ? '' : 's'} no se pudo leer.</p>` : ''}
@@ -1045,11 +1239,10 @@ function dato(titulo, valor) {
 let vista = { id: null, ex: false, cl: false, tc: false };
 let borrador = null;
 const turnoActual = () => { const h = new Date().getHours(); return h >= 7 && h < 20 ? 'Día' : 'Noche'; };
-const borradorVacio = () => ({ turno: turnoActual(), temp: '', glicemia: '', pas: '', pam: '', pad: '', boca: false, sonda: false, orina: '', vomitos: '', defeca: '', comentarios: '' });
+const borradorVacio = () => ({ turno: turnoActual(), temp: '', glicemia: '', pas: '', pam: '', pad: '', boca: false, sonda: false, orina: '', comentarios: '' });
 const iconoTurno = (t) => (t === 'Noche' ? '🌙' : '☀');
-const borradorNumerosOk = (b) => esNum(b.temp.trim(), true) && CAMPOS_ENTEROS.every((k) => esNum(b[k].trim(), false));
-const borradorValido = (b) => borradorNumerosOk(b) && !!(b.temp.trim() || b.glicemia.trim() || b.pas.trim() || b.pam.trim() || b.pad.trim()
-  || b.boca || b.sonda || b.orina || b.vomitos || b.defeca.trim() || b.comentarios.trim());
+const borradorValido = (b) => !!(b.temp.trim() || b.glicemia.trim() || b.pas.trim() || b.pam.trim() || b.pad.trim()
+  || b.boca || b.sonda || b.orina.trim() || b.comentarios.trim());
 
 function plantillaListaExamenes(m) {
   const lista = examenesOrdenados(m);
@@ -1058,15 +1251,13 @@ function plantillaListaExamenes(m) {
     <div class="fila-ex">
       <span>${formatearFecha(e.fecha)}</span>
       <span class="det"><span class="etq ${e.estado === 'Tomados' ? 'tomado' : 'pendiente'}">${e.estado === 'Tomados' ? 'Tomado' : 'Pendiente'}</span>${esc(e.detalle)}</span>
-      <span class="acc-ex">${e.estado === 'Pendientes' ? `<button class="txt" data-tomar-ex="${i}">Marcar tomado</button>` : ''}<button class="peligro" data-quitar-ex="${i}" aria-label="Quitar examen">Quitar</button></span>
+      <button class="peligro" data-quitar-ex="${i}" aria-label="Quitar examen">Quitar</button>
     </div>`).join('')}</div>`;
 }
 
 function plantillaFormClinico(b) {
   const noche = b.turno === 'Noche';
-  const num = (k, tit, decimal) => `<label class="campo"><span>${tit}</span><input type="text" inputmode="${decimal ? 'decimal' : 'numeric'}" data-c="${k}" value="${esc(b[k])}" autocomplete="off"></label>`;
-  const sn = (k, tit) => `<fieldset><legend>${tit}</legend>${['Sí', 'No'].map((o) =>
-    `<label class="opt"><input type="checkbox" data-sn="${k}" value="${o}" ${b[k] === o ? 'checked' : ''}><span>${o}</span></label>`).join('')}</fieldset>`;
+  const num = (k, tit) => `<label class="campo"><span>${tit}</span><input type="text" inputmode="decimal" data-c="${k}" value="${esc(b[k])}" autocomplete="off"></label>`;
   return `
     <div class="form-cl ${noche ? 'noche' : 'dia'}" id="form-cl">
       <div class="pildora-fila">
@@ -1075,17 +1266,15 @@ function plantillaFormClinico(b) {
           <option value="Noche" ${noche ? 'selected' : ''}>🌙 Noche</option>
         </select>
       </div>
-      <div class="fila2">${num('temp', 'Temp °C', true)}${num('glicemia', 'Glicemia', false)}</div>
-      <small class="err" id="err-temp" ${esNum(b.temp.trim(), true) ? 'hidden' : ''}>Temperatura: solo números, por ejemplo 38,5</small>
+      <div class="fila2">${num('temp', 'Temp °C')}${num('glicemia', 'Glicemia')}</div>
       <fieldset><legend>Presiones</legend>
-        <div class="fila3">${num('pas', 'PAS', false)}${num('pam', 'PAM', false)}${num('pad', 'PAD', false)}</div>
+        <div class="fila3">${num('pas', 'PAS')}${num('pam', 'PAM')}${num('pad', 'PAD')}</div>
       </fieldset>
       <fieldset><legend>Alimentación</legend>
         <label class="opt"><input type="checkbox" data-cb="boca" ${b.boca ? 'checked' : ''}><span>Por boca</span></label>
         <label class="opt"><input type="checkbox" data-cb="sonda" ${b.sonda ? 'checked' : ''}><span>Por sonda</span></label>
       </fieldset>
-      <div class="fila2">${sn('orina', 'Orina')}${sn('vomitos', 'Vómitos')}</div>
-      <label class="campo"><span>Defeca</span><input type="text" data-c="defeca" value="${esc(b.defeca)}" autocomplete="off"></label>
+      <label class="campo"><span>Orina / deposiciones</span><input type="text" data-c="orina" value="${esc(b.orina)}" autocomplete="off"></label>
       <label class="campo"><span>Comentarios del turno</span><textarea data-c="comentarios" rows="3">${esc(b.comentarios)}</textarea></label>
       <div class="acciones"><button id="btn-guardar-cl" ${borradorValido(b) ? '' : 'disabled'}>Guardar clínico</button></div>
     </div>`;
@@ -1096,11 +1285,10 @@ function plantillaTablaClinicos(m) {
   if (lista.length === 0) return '<div class="caja"><p class="vacio" style="margin:4px 0">Todavía no hay clínicos registrados.</p></div>';
   const celda = (v) => (v ? esc(v) : '—');
   const filas = [
-    ['Temp °C', (c) => textoDecimal(c.temp)], ['Glicemia', (c) => c.glicemia],
+    ['Temp °C', (c) => c.temp], ['Glicemia', (c) => c.glicemia],
     ['PAS', (c) => c.pas], ['PAM', (c) => c.pam], ['PAD', (c) => c.pad],
     ['Alimentación', (c) => c.alimentacion.map((a) => 'Por ' + a.toLowerCase()).join(', ')],
-    ['Orina', (c) => c.orina], ['Vómitos', (c) => c.vomitos], ['Defeca', (c) => c.defeca],
-    ...(lista.some((c) => c.orinaDeposiciones) ? [['Orina/deposiciones (registro antiguo)', (c) => c.orinaDeposiciones]] : [])
+    ['Orina / deposiciones', (c) => c.orinaDeposiciones]
   ];
   const conComentario = lista.filter((c) => c.comentarios);
   return `
@@ -1131,6 +1319,7 @@ function pantallaDetalle(id) {
     <section class="cuadro">
       <div class="cuadro-cab"><h1>${esc(m.nombre)}</h1><button id="btn-editar">Editar</button></div>
       <div class="datos">
+        ${dato('Estado', m.estado === 'alta' ? 'Alta' + (m.fechaAlta ? ' (' + formatearFecha(m.fechaAlta) + ')' : '') : 'Hospitalizado')}
         ${dato('Fecha de ingreso', formatearFecha(m.fechaIngreso))}
         ${dato('Especie', m.especie)}
         ${dato('Raza', m.raza ?? 'Sin raza')}
@@ -1147,6 +1336,7 @@ function pantallaDetalle(id) {
         ${m.comentarios ? dato('Comentarios', m.comentarios) : ''}
       </div>
     </section>
+    <div class="acciones"><button class="sec" id="btn-alta">${m.estado === 'alta' ? 'Reingresar paciente' : 'Dar de alta'}</button></div>
 
     <div class="bloque">
       <button class="sec" id="tg-ex" aria-expanded="${vista.ex}">${vista.ex ? 'Ocultar lista de exámenes' : 'Mostrar lista de exámenes'}</button>
@@ -1169,12 +1359,7 @@ function pantallaDetalle(id) {
   app.oninput = (e) => {
     const k = e.target.dataset.c;
     if (!k) return;
-    let v = e.target.value;
-    if (k === 'temp') v = soloDecimal(v);
-    else if (CAMPOS_ENTEROS.includes(k)) v = soloEnteros(v);
-    if (v !== e.target.value) e.target.value = v;
-    borrador[k] = v;
-    if (k === 'temp') { const er = document.getElementById('err-temp'); if (er) er.hidden = esNum(v.trim(), true); }
+    borrador[k] = e.target.value;
     actualizarBoton();
   };
   app.onchange = (e) => {
@@ -1184,10 +1369,6 @@ function pantallaDetalle(id) {
       const f = document.getElementById('form-cl');
       f.classList.toggle('noche', t.value === 'Noche');
       f.classList.toggle('dia', t.value !== 'Noche');
-    } else if (t.dataset.sn) {
-      borrador[t.dataset.sn] = t.checked ? t.value : '';
-      app.querySelectorAll(`[data-sn="${t.dataset.sn}"]`).forEach((o) => { if (o !== t) o.checked = false; });
-      actualizarBoton();
     } else if (t.dataset.cb) {
       borrador[t.dataset.cb] = t.checked;
       actualizarBoton();
@@ -1198,6 +1379,15 @@ function pantallaDetalle(id) {
     if (!b) return;
     if (b.id === 'volver') { history.length > 1 ? history.back() : (location.hash = '#/mascotas'); return; }
     if (b.id === 'btn-editar') { location.hash = '#/editar/' + id; return; }
+    if (b.id === 'btn-alta') {
+      if (m.estado === 'alta') { nubeActualizar(id, { estado: 'hospitalizado', fechaAlta: null }); aviso('Paciente reingresado'); }
+      else if (confirm(`¿Dar de alta a ${m.nombre}? Pasará al Archivo y dejará de salir en la lista y en el mensaje.`)) {
+        nubeActualizar(id, { estado: 'alta', fechaAlta: Date.now() });
+        aviso('Paciente dado de alta');
+        location.hash = '#/mascotas';
+      }
+      return;
+    }
     if (b.id === 'tg-ex') { vista.ex = !vista.ex; redibujar(); return; }
     if (b.id === 'tg-cl') { vista.cl = !vista.cl; redibujar(); return; }
     if (b.id === 'tg-tc') { vista.tc = !vista.tc; redibujar(); return; }
@@ -1207,42 +1397,30 @@ function pantallaDetalle(id) {
       while (m.clinicos.some((c) => c.fecha === fecha)) fecha += 60000; // dos clínicos en el mismo minuto: el segundo queda 1 min después
       const nuevo = {
         fecha, creado: Date.now(), turno: borrador.turno,
-        temp: borrador.temp.trim().replace(',', '.'), glicemia: borrador.glicemia.trim(),
+        temp: borrador.temp.trim(), glicemia: borrador.glicemia.trim(),
         pas: borrador.pas.trim(), pam: borrador.pam.trim(), pad: borrador.pad.trim(),
         alimentacion: [borrador.boca ? 'Boca' : null, borrador.sonda ? 'Sonda' : null].filter(Boolean),
-        orina: borrador.orina, vomitos: borrador.vomitos, defeca: borrador.defeca.trim(), comentarios: borrador.comentarios.trim()
+        orinaDeposiciones: borrador.orina.trim(), comentarios: borrador.comentarios.trim()
       };
-      await dbGuardar({ ...m, clinicos: [...m.clinicos, nuevo].sort((x, y) => x.fecha - y.fecha), fechaModificacion: Date.now() });
-      await recargar();
+      nubeAgregarClinico(id, nuevo);
       borrador = borradorVacio();
       vista.tc = true;
       aviso('Clínico guardado');
       redibujar();
       return;
     }
-    if (b.dataset.tomarEx !== undefined) {
-      const e1 = examenesOrdenados(m)[Number(b.dataset.tomarEx)];
-      if (e1 && e1.estado === 'Pendientes') {
-        const k = claveExamen(e1);
-        const lista = m.examenes.map((x) => (claveExamen(x) === k ? { ...x, estado: 'Tomados', fecha: deISO(aISO(Date.now())) } : x));
-        await dbGuardar({ ...m, examenes: consolidarExamenes(lista), fechaModificacion: Date.now() });
-        await recargar(); aviso('Examen marcado como tomado'); redibujar();
-      }
-      return;
-    }
     if (b.dataset.quitarEx !== undefined) {
       const e1 = examenesOrdenados(m)[Number(b.dataset.quitarEx)];
       if (e1 && confirm('¿Quitar este examen de la lista?')) {
-        await dbGuardar({ ...m, examenes: m.examenes.filter((x) => x !== m.examenes.find((y) => claveExamen(y) === claveExamen(e1))) });
-        await recargar(); redibujar();
+        nubeQuitar(id, 'examenes', e1);
       }
       return;
     }
     if (b.dataset.quitarCl !== undefined) {
       const f = Number(b.dataset.quitarCl);
       if (confirm('¿Borrar este clínico? Esta acción no se puede deshacer.')) {
-        await dbGuardar({ ...m, clinicos: m.clinicos.filter((c) => c.fecha !== f) });
-        await recargar(); redibujar();
+        const c1 = m.clinicos.find((c) => c.fecha === f);
+        if (c1) nubeQuitar(id, 'clinicos', c1);
       }
     }
   };
@@ -1254,8 +1432,13 @@ function pantallaEditar(id) {
   app.innerHTML = '<h1>Editar mascota</h1><div id="form"></div>';
   const s = estadoDesde(m);
   montarFormulario(document.getElementById('form'), s, 'editar', async (est) => {
-    await dbGuardar({ ...aMascota(est, m), id: m.id, fechaModificacion: Date.now() });
-    await recargar();
+    const { id: _i, clinicos: _c, examenes, ...campos } = aMascota(est, m);
+    campos.fechaModificacion = Date.now();
+    campos.fichaModificada = Date.now();
+    const upd = limpiar(campos);
+    // Los exámenes y clínicos nunca se reescriben completos: solo se agrega lo nuevo (así no se pisan los cambios de otra persona)
+    if (examenes.length > m.examenes.length) upd.examenes = FB.arrayUnion(limpiar(examenes[examenes.length - 1]));
+    enviar(FB.updateDoc(refDe(m.id), upd));
     aviso('Cambios guardados');
     location.replace('#/detalle/' + id);
   }, () => history.back());
@@ -1271,11 +1454,15 @@ function render() {
   app.onclick = null; app.oninput = null; app.onchange = null;
 
   document.getElementById('nav-ingreso').classList.toggle('activa', seccion === 'ingreso');
-  document.getElementById('nav-mascotas').classList.toggle('activa', seccion !== 'ingreso');
+  document.getElementById('nav-archivo').classList.toggle('activa', seccion === 'archivo');
+  document.getElementById('nav-mascotas').classList.toggle('activa', seccion !== 'ingreso' && seccion !== 'archivo');
 
+  if (!usuario) { pantallaLogin(); return; }
+  if (!listo) { app.innerHTML = '<p class="vacio">Cargando pacientes…</p>'; return; }
   if (seccion === 'mascotas') pantallaLista();
-  else if (seccion === 'detalle') pantallaDetalle(Number(partes[2]));
-  else if (seccion === 'editar') pantallaEditar(Number(partes[2]));
+  else if (seccion === 'archivo') pantallaArchivo();
+  else if (seccion === 'detalle') pantallaDetalle(partes[2]);
+  else if (seccion === 'editar') pantallaEditar(partes[2]);
   else pantallaIngreso();
 }
 window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
@@ -1283,20 +1470,46 @@ window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); }
 /* =====================================================================
    Inicio
    ===================================================================== */
+window.addEventListener('online', () => (document.getElementById('red').hidden = true));
+window.addEventListener('offline', () => (document.getElementById('red').hidden = false));
+if (!navigator.onLine) document.getElementById('red').hidden = false;
+
 (async function iniciar() {
-  try {
-    db = await abrirDB();
-    await recargar();
-    // Pide al navegador que no borre los datos si hay poco espacio
-    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-  } catch (e) {
-    app.innerHTML = '<h1>No se pudo abrir la base de datos</h1><p>Prueba abrir la app en una ventana normal (no privada) del navegador.</p>';
-    return;
-  }
-  render();
+  app.innerHTML = '<p class="vacio">Cargando…</p>';
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
+  try {
+    FB = await cargarFirebase();
+  } catch (e) {
+    app.innerHTML = '<h1>No se pudo conectar</h1><p>La primera vez la app necesita internet para cargar. Revisa tu conexión e inténtalo de nuevo.</p><p><button id="reint">Reintentar</button></p>';
+    document.getElementById('reint').onclick = () => location.reload();
+    return;
+  }
+  const fbApp = FB.initializeApp(firebaseConfig);
+  fbAuth = FB.getAuth(fbApp);
+  try {
+    // Guarda una copia en el teléfono: la app abre y se puede trabajar aunque no haya internet; al volver se sincroniza.
+    fdb = FB.initializeFirestore(fbApp, { localCache: FB.persistentLocalCache({ tabManager: FB.persistentMultipleTabManager() }) });
+  } catch (e) {
+    fdb = FB.getFirestore(fbApp);
+  }
+  // Datos que se hayan guardado en este teléfono con la versión anterior (solo se leen para ofrecer subirlos)
+  try {
+    if (localStorage.getItem('vet_local_subido') !== '1') {
+      db = await abrirDB();
+      localAntiguo = (await dbTodas()).map(normalizarMascota).map((m) => ({ ...m, modificacionPrecisa: true }));
+    }
+  } catch (e) { localAntiguo = []; }
+
+  FB.onAuthStateChanged(fbAuth, (user) => {
+    if (desuscribir) { desuscribir(); desuscribir = null; }
+    usuario = user; mascotas = []; listo = false;
+    if (!user) { pantallaLogin(); return; }
+    document.body.classList.remove('sin-sesion');
+    app.innerHTML = '<p class="vacio">Cargando pacientes…</p>';
+    suscribir();
+  });
 })();
 </script>
 </body>
