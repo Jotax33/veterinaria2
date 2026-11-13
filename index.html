@@ -185,6 +185,9 @@ table.tabla-cl { border-collapse: collapse; width: 100%; min-width: 100%; font-s
 .coment-turno .t { font-size: .85rem; font-weight: 600; text-align: center; margin-bottom: 4px; }
 .coment-turno p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .coment-turno p b { font-weight: 600; }
+.coment-turno button.txt { padding: 2px 8px; font-size: .85rem; }
+.coment-turno textarea { margin-top: 4px; }
+.coment-turno .acc { display: flex; gap: 8px; margin: 6px 0 10px; }
 
 /* ---------- barra inferior ---------- */
 nav {
@@ -325,6 +328,11 @@ function enviar(promesa) {
 const nubeCrear = (m) => { const { id, ...resto } = m; enviar(FB.setDoc(refDe(idPara(m)), limpiar(resto))); };
 const nubeActualizar = (id, campos) => enviar(FB.updateDoc(refDe(id), limpiar(campos)));
 const nubeAgregarClinico = (id, c) => enviar(FB.updateDoc(refDe(id), { clinicos: FB.arrayUnion(limpiar(c)), fechaModificacion: Date.now() }));
+// Un elemento de una lista de Firestore no se puede cambiar "en su lugar": se agrega el nuevo y se quita el viejo (sin reescribir toda la lista).
+const nubeEditarClinico = (id, viejo, nuevo) => {
+  enviar(FB.updateDoc(refDe(id), { clinicos: FB.arrayUnion(limpiar(nuevo)), fechaModificacion: Date.now() }));
+  enviar(FB.updateDoc(refDe(id), { clinicos: FB.arrayRemove(limpiar(viejo)) }));
+};
 const nubeQuitar = (id, campo, item) => enviar(FB.updateDoc(refDe(id), { [campo]: FB.arrayRemove(limpiar(item)) }));
 const nubeBorrar = (id) => enviar(FB.deleteDoc(refDe(id)));
 
@@ -564,7 +572,7 @@ function plantillaFormulario(s, modo) {
     ${grupoRadio('estadoExamenes', 'Exámenes', ['Tomados', 'Pendientes', 'No'], s.estadoExamenes)}
     ${modo === 'editar' ? '<p class="ayuda">Los exámenes ya registrados se ven en el detalle. Aquí puedes agregar uno nuevo.</p>' : ''}
     ${titExamenes ? `
-      <label class="campo"><span>${s.estadoExamenes === 'Tomados' ? 'Fecha en que se tomaron' : 'Fecha de los exámenes pendientes'}</span>
+      <label class="campo"><span>${s.estadoExamenes === 'Tomados' ? '¿Qué día se tomaron los exámenes?' : '¿Qué día se tomarán los exámenes?'}</span>
         <input type="date" data-k="fechaExamenes" value="${esc(s.fechaExamenes)}"></label>
       ${campoTexto('examenesPorTomar', titExamenes, s.examenesPorTomar, {
         errId: 'err-ex', errTexto: 'Obligatorio si los exámenes están Tomados o Pendientes', error: v.examenesFalta })}` : ''}
@@ -860,7 +868,7 @@ function parsearMensaje(texto) {
           reconocido = true;
           const v = seg.slice(p + 1).trim();
           if (['temp', 'glicemia', 'pas', 'pam', 'pad'].includes(clave)) { cur[clave] = v.replace(/\s*°\s*c\s*$/i, '').trim(); ref = null; }
-          else if (clave === 'alimentacion') { const nv = sinAcentos(v); cur.alimentacion = ['Boca', 'Sonda'].filter((x) => nv.includes(sinAcentos(x))); ref = null; }
+          else if (clave === 'alimentacion') { const nv = sinAcentos(v); cur.alimentacion = nv === 'no' ? ['No'] : ['Boca', 'Sonda'].filter((x) => nv.includes(sinAcentos(x))); ref = null; }
           else if (clave === 'orina') { cur.orinaDeposiciones = v; ref = { o: cur, k: 'orinaDeposiciones' }; }
           else if (clave === 'coment') { cur.comentarios = v; ref = { o: cur, k: 'comentarios' }; }
         }
@@ -1238,18 +1246,19 @@ function dato(titulo, valor) {
 // Qué secciones están abiertas (solo mientras estás en esta pantalla) y el clínico que se está escribiendo
 let vista = { id: null, ex: false, cl: false, tc: false };
 let borrador = null;
+let editCom = null, textoCom = ''; // comentario de turno que se está editando
 const turnoActual = () => { const h = new Date().getHours(); return h >= 7 && h < 20 ? 'Día' : 'Noche'; };
-const borradorVacio = () => ({ turno: turnoActual(), temp: '', glicemia: '', pas: '', pam: '', pad: '', boca: false, sonda: false, orina: '', comentarios: '' });
+const borradorVacio = () => ({ turno: turnoActual(), temp: '', glicemia: '', pas: '', pam: '', pad: '', alim: '', via: '', orina: '', comentarios: '' });
 const iconoTurno = (t) => (t === 'Noche' ? '🌙' : '☀');
-const borradorValido = (b) => !!(b.temp.trim() || b.glicemia.trim() || b.pas.trim() || b.pam.trim() || b.pad.trim()
-  || b.boca || b.sonda || b.orina.trim() || b.comentarios.trim());
+const borradorValido = (b) => !(b.alim === 'Sí' && !b.via) && !!(b.temp.trim() || b.glicemia.trim() || b.pas.trim() || b.pam.trim() || b.pad.trim()
+  || b.alim || b.orina.trim() || b.comentarios.trim());
 
 function plantillaListaExamenes(m) {
   const lista = examenesOrdenados(m);
   if (lista.length === 0) return '<div class="caja"><div class="caja-t">Exámenes</div><p class="vacio" style="margin:6px 0">Sin exámenes registrados.</p></div>';
   return `<div class="caja"><div class="caja-t">Exámenes</div>${lista.map((e, i) => `
     <div class="fila-ex">
-      <span>${formatearFecha(e.fecha)}</span>
+      <span>${e.estado === 'Tomados' ? '' : 'Se tomará el '}${formatearFecha(e.fecha)}</span>
       <span class="det"><span class="etq ${e.estado === 'Tomados' ? 'tomado' : 'pendiente'}">${e.estado === 'Tomados' ? 'Tomado' : 'Pendiente'}</span>${esc(e.detalle)}</span>
       <button class="peligro" data-quitar-ex="${i}" aria-label="Quitar examen">Quitar</button>
     </div>`).join('')}</div>`;
@@ -1271,8 +1280,13 @@ function plantillaFormClinico(b) {
         <div class="fila3">${num('pas', 'PAS')}${num('pam', 'PAM')}${num('pad', 'PAD')}</div>
       </fieldset>
       <fieldset><legend>Alimentación</legend>
-        <label class="opt"><input type="checkbox" data-cb="boca" ${b.boca ? 'checked' : ''}><span>Por boca</span></label>
-        <label class="opt"><input type="checkbox" data-cb="sonda" ${b.sonda ? 'checked' : ''}><span>Por sonda</span></label>
+        <label class="opt"><input type="checkbox" data-alim="Sí" ${b.alim === 'Sí' ? 'checked' : ''}><span>Sí</span></label>
+        <label class="opt"><input type="checkbox" data-alim="No" ${b.alim === 'No' ? 'checked' : ''}><span>No</span></label>
+        ${b.alim === 'Sí' ? `<div class="sub">
+          <label class="opt"><input type="checkbox" data-via="Boca" ${b.via === 'Boca' ? 'checked' : ''}><span>Boca</span></label>
+          <label class="opt"><input type="checkbox" data-via="Sonda" ${b.via === 'Sonda' ? 'checked' : ''}><span>Sonda</span></label>
+          ${b.via ? '' : '<p class="ayuda">Elige boca o sonda (solo una).</p>'}
+        </div>` : ''}
       </fieldset>
       <label class="campo"><span>Orina / deposiciones</span><input type="text" data-c="orina" value="${esc(b.orina)}" autocomplete="off"></label>
       <label class="campo"><span>Comentarios del turno</span><textarea data-c="comentarios" rows="3">${esc(b.comentarios)}</textarea></label>
@@ -1287,7 +1301,7 @@ function plantillaTablaClinicos(m) {
   const filas = [
     ['Temp °C', (c) => c.temp], ['Glicemia', (c) => c.glicemia],
     ['PAS', (c) => c.pas], ['PAM', (c) => c.pam], ['PAD', (c) => c.pad],
-    ['Alimentación', (c) => c.alimentacion.map((a) => 'Por ' + a.toLowerCase()).join(', ')],
+    ['Alimentación', (c) => c.alimentacion.map((a) => (a === 'No' ? 'No' : 'Por ' + a.toLowerCase())).join(', ')],
     ['Orina / deposiciones', (c) => c.orinaDeposiciones]
   ];
   const conComentario = lista.filter((c) => c.comentarios);
@@ -1299,7 +1313,14 @@ function plantillaTablaClinicos(m) {
       <tbody>${filas.map(([t, f]) => `<tr><th scope="row">${t}</th>${lista.map((c) => `<td>${celda(f(c))}</td>`).join('')}</tr>`).join('')}</tbody>
     </table></div>
     <div class="coment-turno"><div class="t">Comentarios del turno</div>
-      ${conComentario.length ? conComentario.map((c) => `<p><b>${formatearFecha(c.fecha)} ${formatearHora(c.fecha)} ${iconoTurno(c.turno)}:</b> ${esc(c.comentarios)}</p>`).join('')
+      ${conComentario.length ? conComentario.map((c) => {
+          const cab = `<b>${formatearFecha(c.fecha)} ${formatearHora(c.fecha)} ${iconoTurno(c.turno)}:</b>`;
+          if (editCom === c.fecha) {
+            return `<p>${cab}</p><textarea data-ecom rows="3">${esc(textoCom)}</textarea>
+              <div class="acc"><button id="guardar-com">Guardar</button><button class="sec" id="cancelar-com">Cancelar</button></div>`;
+          }
+          return `<p>${cab} ${esc(c.comentarios)} <button class="txt" data-edit-com="${c.fecha}">Editar</button></p>`;
+        }).join('')
         : '<p class="vacio" style="text-align:center">Sin comentarios.</p>'}
     </div>`;
 }
@@ -1311,7 +1332,7 @@ function pantallaDetalle(id) {
     document.getElementById('volver').onclick = () => (location.hash = '#/mascotas');
     return;
   }
-  if (vista.id !== id) { vista = { id, ex: false, cl: false, tc: false }; borrador = borradorVacio(); }
+  if (vista.id !== id) { vista = { id, ex: false, cl: false, tc: false }; borrador = borradorVacio(); editCom = null; }
   if (!borrador) borrador = borradorVacio();
 
   app.innerHTML = `
@@ -1357,6 +1378,7 @@ function pantallaDetalle(id) {
   const actualizarBoton = () => { const b = document.getElementById('btn-guardar-cl'); if (b) b.disabled = !borradorValido(borrador); };
 
   app.oninput = (e) => {
+    if (e.target.dataset.ecom !== undefined) { textoCom = e.target.value; return; }
     const k = e.target.dataset.c;
     if (!k) return;
     borrador[k] = e.target.value;
@@ -1369,6 +1391,13 @@ function pantallaDetalle(id) {
       const f = document.getElementById('form-cl');
       f.classList.toggle('noche', t.value === 'Noche');
       f.classList.toggle('dia', t.value !== 'Noche');
+    } else if (t.dataset.alim) {
+      borrador.alim = t.checked ? t.dataset.alim : '';
+      if (borrador.alim !== 'Sí') borrador.via = '';
+      redibujar();
+    } else if (t.dataset.via) {
+      borrador.via = t.checked ? t.dataset.via : '';
+      redibujar();
     } else if (t.dataset.cb) {
       borrador[t.dataset.cb] = t.checked;
       actualizarBoton();
@@ -1392,6 +1421,24 @@ function pantallaDetalle(id) {
     if (b.id === 'tg-cl') { vista.cl = !vista.cl; redibujar(); return; }
     if (b.id === 'tg-tc') { vista.tc = !vista.tc; redibujar(); return; }
 
+    if (b.dataset.editCom !== undefined) {
+      const c1 = m.clinicos.find((c) => c.fecha === Number(b.dataset.editCom));
+      if (c1) { editCom = c1.fecha; textoCom = c1.comentarios || ''; redibujar(); }
+      return;
+    }
+    if (b.id === 'cancelar-com') { editCom = null; redibujar(); return; }
+    if (b.id === 'guardar-com') {
+      const c1 = m.clinicos.find((c) => c.fecha === editCom);
+      const txt = textoCom.trim();
+      if (c1 && txt !== (c1.comentarios || '')) {
+        if (txt === '' && !confirm('¿Borrar el comentario de este turno?')) return;
+        nubeEditarClinico(id, c1, { ...c1, comentarios: txt });
+        aviso('Comentario actualizado');
+      }
+      editCom = null; redibujar();
+      return;
+    }
+
     if (b.id === 'btn-guardar-cl' && borradorValido(borrador)) {
       let fecha = minutoActual();
       while (m.clinicos.some((c) => c.fecha === fecha)) fecha += 60000; // dos clínicos en el mismo minuto: el segundo queda 1 min después
@@ -1399,7 +1446,7 @@ function pantallaDetalle(id) {
         fecha, creado: Date.now(), turno: borrador.turno,
         temp: borrador.temp.trim(), glicemia: borrador.glicemia.trim(),
         pas: borrador.pas.trim(), pam: borrador.pam.trim(), pad: borrador.pad.trim(),
-        alimentacion: [borrador.boca ? 'Boca' : null, borrador.sonda ? 'Sonda' : null].filter(Boolean),
+        alimentacion: borrador.alim === 'Sí' ? [borrador.via] : borrador.alim === 'No' ? ['No'] : [],
         orinaDeposiciones: borrador.orina.trim(), comentarios: borrador.comentarios.trim()
       };
       nubeAgregarClinico(id, nuevo);
