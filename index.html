@@ -1263,11 +1263,12 @@ function plantillaListaExamenes(m) {
         <button class="peligro" data-quitar-ex="${i}" aria-label="Quitar examen">Quitar</button>
       </span>
     </div>`).join('')}</div>`;
-  const cajaEco = m.ecografia === 'Pendiente'
+  const ecoPend = m.ecografia === 'Pendiente';
+  const cajaEco = (ecoPend || m.ecografia === 'Sí')
     ? `<div class="caja" style="margin-top:10px"><div class="caja-t">Ecografía</div>
     <div class="fila-ex fila-eco">
-      <span class="det"><span class="etq pendiente">Pendiente</span>Ecografía por realizar</span>
-      <span class="acc-ex"><button class="ok" data-tomar-eco="1" aria-label="Marcar ecografía como tomada">Tomada</button></span>
+      <span class="det"><span class="etq ${ecoPend ? 'pendiente' : 'tomado'}">${ecoPend ? 'Pendiente' : 'Tomada'}</span>${ecoPend ? 'Ecografía por realizar' : 'Ecografía realizada'}</span>
+      ${ecoPend ? '<span class="acc-ex"><button class="ok" data-tomar-eco="1" aria-label="Marcar ecografía como tomada">Tomada</button></span>' : ''}
     </div></div>`
     : '';
   return cajaEx + cajaEco;
@@ -1508,7 +1509,7 @@ function pantallaDetalle(id) {
     }
     if (b.dataset.tomarEco !== undefined) {
       if (m.ecografia !== 'Pendiente') return;
-      const txt = prompt('Ecografía realizada. ¿Qué se vio? (opcional, puedes dejarlo vacío)');
+      const txt = prompt('Incluye lo que se vio en la ecografía.\n\nSi aún no está lista, déjalo vacío y edítalo después desde «Editar».');
       if (txt === null) return; // canceló
       nubeActualizar(id, { ecografia: 'Sí', hallazgosEcografia: txt.trim(), fechaModificacion: Date.now(), fichaModificada: Date.now() });
       aviso('Ecografía marcada como tomada');
