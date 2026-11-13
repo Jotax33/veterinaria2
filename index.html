@@ -482,12 +482,19 @@ function guardarCorte(ms) {
   try { localStorage.setItem(CLAVE_CORTE, String(ms)); } catch { /* sin almacenamiento: se exportará todo la próxima vez */ }
 }
 const clinicosOrdenados = (m) => [...m.clinicos].sort((a, b) => a.fecha - b.fecha);
+// Filtro de exportación: fecha + turno (igual que en la ficha). Con fecha vacía y turno "Todos" no hay filtro
+// y se exportan solo los clínicos nuevos desde la última exportación.
+let filtroExp = { fc: '', tt: 'Todos' };
+const hayFiltroExp = () => !!filtroExp.fc || filtroExp.tt !== 'Todos';
+const coincideFiltroExp = (c) => (!filtroExp.fc || aISO(c.fecha) === filtroExp.fc) && (filtroExp.tt === 'Todos' || c.turno === filtroExp.tt);
+// Qué clínicos entran al mensaje según el modo (filtro elegido o "nuevos")
+const clinicosAExportar = (m, corte) => clinicosOrdenados(m).filter((c) => (hayFiltroExp() ? coincideFiltroExp(c) : c.creado > corte));
 const examenesOrdenados = (m) => [...m.examenes].sort((a, b) => a.fecha - b.fecha);
 
-function generarTextoExportacion(todos = false) {
+function generarTextoExportacion() {
   const activas = mascotasActivas();
   if (activas.length === 0) return 'No hay mascotas registradas.';
-  const corte = todos ? 0 : leerCorte();
+  const corte = leerCorte();
   const hoy = formatearFecha(Date.now());
 
   const infecciosos = activas.filter((m) => m.infeccioso)
@@ -533,7 +540,7 @@ function generarTextoExportacion(todos = false) {
       if (m.ecografia === 'Sí' && m.hallazgosEcografia) L.push(`   Hallazgos ecografía: ${m.hallazgosEcografia}`);
       L.push(`   En ayuno: ${m.enAyuno ? 'Sí' : 'No'}`);
       if (m.comentarios) L.push(`   Comentarios: ${m.comentarios}`);
-      for (const c of clinicosOrdenados(m).filter((x) => x.creado > corte)) {
+      for (const c of clinicosAExportar(m, corte)) {
         L.push(`   Clínico ${formatearFechaHora(c.fecha)} (${c.turno})`);
         const signos = [];
         if (c.temp) signos.push(`Temp: ${c.temp} °C`);
@@ -555,11 +562,9 @@ function generarTextoExportacion(todos = false) {
   return L.join('\n');
 }
 
-const quiereTodos = () => !!(document.getElementById('chk-todos') && document.getElementById('chk-todos').checked);
-
 async function copiarTexto() {
   const ahora = Date.now();
-  const texto = generarTextoExportacion(quiereTodos());
+  const texto = generarTextoExportacion();
   try {
     await navigator.clipboard.writeText(texto);
   } catch {
@@ -570,7 +575,8 @@ async function copiarTexto() {
     ta.remove();
     if (!ok) { aviso('No se pudo copiar'); return; }
   }
-  guardarCorte(ahora);
+  // Solo el modo "nuevos" mueve el corte; una exportación filtrada por fecha/turno no debe hacer que se salten clínicos
+  if (!hayFiltroExp()) guardarCorte(ahora);
   aviso('Texto copiado');
   pantallaLista();
 }
@@ -860,12 +866,15 @@ function pantallaIngreso() {
 }
 
 function textoInfoExport() {
-  const todos = quiereTodos();
-  const corte = leerCorte();
   const activas = mascotasActivas();
-  const total = activas.reduce((a, m) => a + m.clinicos.length, 0);
+  if (hayFiltroExp()) {
+    const n = activas.reduce((a, m) => a + m.clinicos.filter(coincideFiltroExp).length, 0);
+    const cuando = filtroExp.fc ? formatearFecha(deISO(filtroExp.fc)) : 'todas las fechas';
+    const turno = filtroExp.tt === 'Todos' ? 'todos los turnos' : 'turno ' + filtroExp.tt;
+    return `Se exportarán solo los clínicos de ${cuando}, ${turno}: ${n}.`;
+  }
+  const corte = leerCorte();
   const nuevos = activas.reduce((a, m) => a + m.clinicos.filter((c) => c.creado > corte).length, 0);
-  if (todos) return `Se exportarán todos los clínicos (${total}).`;
   return `Se exportarán solo los clínicos nuevos: ${nuevos}` +
     (corte ? ` (desde la última exportación, ${formatearFechaHora(corte)}).` : ' (aún no has exportado).');
 }
@@ -880,7 +889,6 @@ function htmlBannerLocal() {
 
 function pantallaLista() {
   const activas = mascotasActivas();
-  const marcado = quiereTodos();
   const tarjeta = (m) => `
     <div class="tarjeta" data-id="${esc(m.id)}">
       <div class="info">
@@ -910,7 +918,16 @@ function pantallaLista() {
     <div class="barra">
       <button id="btn-copiar" ${activas.length ? '' : 'disabled'}>Copiar texto</button>
     </div>
-    <label class="opt opcion-export"><input type="checkbox" id="chk-todos" ${marcado ? 'checked' : ''}><span>Incluir todos los clínicos (no solo los nuevos)</span></label>
+    <div class="filtro-cl opcion-export">
+      <div class="fila2">
+        <label class="campo"><span>Fecha de los clínicos</span><input type="date" id="exp-fc" value="${esc(filtroExp.fc)}"></label>
+        <label class="campo"><span>Turno</span>
+          <select id="exp-tt">
+            ${['Todos', 'Día', 'Noche'].map((o) => `<option value="${o}" ${filtroExp.tt === o ? 'selected' : ''}>${o === 'Día' ? '☀ Día' : o === 'Noche' ? '🌙 Noche' : 'Todos'}</option>`).join('')}
+          </select></label>
+      </div>
+      ${hayFiltroExp() ? '<button class="txt" id="exp-limpiar" style="padding:4px 0">Quitar filtro (volver a solo los nuevos)</button>' : '<p class="ayuda">Sin filtro: se copian los clínicos nuevos. Elige fecha y/o turno para copiar solo esos.</p>'}
+    </div>
     <p class="vacio" id="info-export">${esc(textoInfoExport())}</p>
     ${activas.length ? tarjetas : '<p class="vacio">No hay mascotas hospitalizadas. Agrega una en la pestaña Ingreso.</p>'}
     <details class="respaldo">
@@ -925,9 +942,14 @@ function pantallaLista() {
 
   document.getElementById('btn-copiar').onclick = copiarTexto;
   document.getElementById('btn-salir').onclick = () => { if (confirm('¿Cerrar sesión?')) FB.signOut(fbAuth); };
-  document.getElementById('chk-todos').onchange = () => {
-    document.getElementById('info-export').textContent = textoInfoExport();
+  const alCambiarFiltro = () => {
+    filtroExp = { fc: document.getElementById('exp-fc').value, tt: document.getElementById('exp-tt').value };
+    pantallaLista();
   };
+  document.getElementById('exp-fc').onchange = alCambiarFiltro;
+  document.getElementById('exp-tt').onchange = alCambiarFiltro;
+  const limpiar = document.getElementById('exp-limpiar');
+  if (limpiar) limpiar.onclick = () => { filtroExp = { fc: '', tt: 'Todos' }; pantallaLista(); };
   document.getElementById('btn-resp-bajar').onclick = descargarRespaldo;
   const inp = document.getElementById('archivo-resp');
   document.getElementById('btn-resp-subir').onclick = () => inp.click();
