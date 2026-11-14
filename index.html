@@ -482,11 +482,26 @@ function guardarCorte(ms) {
   try { localStorage.setItem(CLAVE_CORTE, String(ms)); } catch { /* sin almacenamiento: se exportará todo la próxima vez */ }
 }
 const clinicosOrdenados = (m) => [...m.clinicos].sort((a, b) => a.fecha - b.fecha);
+/* La NOCHE empieza un día y termina al siguiente (1 clínico en la tarde/noche y 2 en la madrugada).
+   Un clínico de turno Noche anotado antes de las 12:00 pertenece a la noche que empezó el día anterior.
+   Así, al elegir "Noche" y una fecha, salen el clínico de ese día y los de la madrugada siguiente. */
+const HORA_FIN_NOCHE = 12;
+function diaDeNoche(c) {
+  const d = new Date(c.fecha);
+  if (d.getHours() < HORA_FIN_NOCHE) d.setDate(d.getDate() - 1);
+  return aISO(d.getTime());
+}
+function coincideFechaTurno(c, fc, tt) {
+  if (tt !== 'Todos' && c.turno !== tt) return false;
+  if (!fc) return true;
+  return (tt === 'Noche' ? diaDeNoche(c) : aISO(c.fecha)) === fc;
+}
+const diaSiguienteISO = (iso) => { const [a, m, d] = iso.split('-').map(Number); return aISO(new Date(a, m - 1, d + 1, 12).getTime()); };
 // Filtro de exportación: fecha + turno (igual que en la ficha). Con fecha vacía y turno "Todos" no hay filtro
 // y se exportan solo los clínicos nuevos desde la última exportación.
 let filtroExp = { fc: '', tt: 'Todos' };
 const hayFiltroExp = () => !!filtroExp.fc || filtroExp.tt !== 'Todos';
-const coincideFiltroExp = (c) => (!filtroExp.fc || aISO(c.fecha) === filtroExp.fc) && (filtroExp.tt === 'Todos' || c.turno === filtroExp.tt);
+const coincideFiltroExp = (c) => coincideFechaTurno(c, filtroExp.fc, filtroExp.tt);
 // Qué clínicos entran al mensaje según el modo (filtro elegido o "nuevos")
 const clinicosAExportar = (m, corte) => clinicosOrdenados(m).filter((c) => (hayFiltroExp() ? coincideFiltroExp(c) : c.creado > corte));
 const examenesOrdenados = (m) => [...m.examenes].sort((a, b) => a.fecha - b.fecha);
@@ -869,6 +884,9 @@ function textoInfoExport() {
   const activas = mascotasActivas();
   if (hayFiltroExp()) {
     const n = activas.reduce((a, m) => a + m.clinicos.filter(coincideFiltroExp).length, 0);
+    if (filtroExp.fc && filtroExp.tt === 'Noche') {
+      return `Se exportarán los clínicos de la noche que empieza el ${formatearFecha(deISO(filtroExp.fc))} (con la madrugada del ${formatearFecha(deISO(diaSiguienteISO(filtroExp.fc)))}): ${n}.`;
+    }
     const cuando = filtroExp.fc ? formatearFecha(deISO(filtroExp.fc)) : 'todas las fechas';
     const turno = filtroExp.tt === 'Todos' ? 'todos los turnos' : 'turno ' + filtroExp.tt;
     return `Se exportarán solo los clínicos de ${cuando}, ${turno}: ${n}.`;
@@ -926,6 +944,7 @@ function pantallaLista() {
             ${['Todos', 'Día', 'Noche'].map((o) => `<option value="${o}" ${filtroExp.tt === o ? 'selected' : ''}>${o === 'Día' ? '☀ Día' : o === 'Noche' ? '🌙 Noche' : 'Todos'}</option>`).join('')}
           </select></label>
       </div>
+      ${filtroExp.fc && filtroExp.tt === 'Noche' ? '<p class="ayuda">Noche = el clínico de la tarde/noche de la fecha elegida + los de la madrugada del día siguiente (hasta las 12:00).</p>' : ''}
       ${hayFiltroExp() ? '<button class="txt" id="exp-limpiar" style="padding:4px 0">Quitar filtro (volver a solo los nuevos)</button>' : '<p class="ayuda">Sin filtro: se copian los clínicos nuevos. Elige fecha y/o turno para copiar solo esos.</p>'}
     </div>
     <p class="vacio" id="info-export">${esc(textoInfoExport())}</p>
@@ -1086,6 +1105,7 @@ function dato(titulo, valor) {
 let vista = { id: null, ex: false, cl: false, tc: false, fc: '', tt: 'Todos' };
 let borrador = null;
 let editCom = null, textoCom = ''; // comentario de turno que se está editando
+let editFecha = null, datosFecha = { f: '', h: '', t: 'Día' }; // clínico cuya fecha/hora se está corrigiendo
 const turnoActual = () => { const h = new Date().getHours(); return h >= 7 && h < 20 ? 'Día' : 'Noche'; };
 const borradorVacio = () => ({ turno: turnoActual(), temp: '', glicemia: '', pas: '', pam: '', pad: '', alim: '', via: '', orina: '', vomito: '', feca: '', comentarios: '' });
 const iconoTurno = (t) => (t === 'Noche' ? '🌙' : '☀');
@@ -1155,6 +1175,7 @@ function plantillaFormClinico(b) {
 function plantillaTablaClinicos(m) {
   const todos = clinicosOrdenados(m);
   if (todos.length === 0) return '<div class="caja"><p class="vacio" style="margin:4px 0">Todavía no hay clínicos registrados.</p></div>';
+  const cEdPrev = () => editFecha != null && todos.some((c) => c.fecha === editFecha);
   const filtro = `
     <div class="filtro-cl">
       <div class="fila2">
@@ -1164,10 +1185,11 @@ function plantillaTablaClinicos(m) {
             ${['Todos', 'Día', 'Noche'].map((o) => `<option value="${o}" ${vista.tt === o ? 'selected' : ''}>${o === 'Día' ? '☀ Día' : o === 'Noche' ? '🌙 Noche' : 'Todos'}</option>`).join('')}
           </select></label>
       </div>
+      ${vista.fc && vista.tt === 'Noche' ? `<p class="ayuda">Noche que empieza el ${formatearFecha(deISO(vista.fc))}: incluye la madrugada del día siguiente.</p>` : ''}
       ${vista.fc ? '<button class="txt" id="f-todas" style="padding:4px 0">Ver todas las fechas</button>' : '<p class="ayuda">Mostrando todas las fechas.</p>'}
     </div>`;
-  const lista = todos.filter((c) => (!vista.fc || aISO(c.fecha) === vista.fc) && (vista.tt === 'Todos' || c.turno === vista.tt));
-  if (lista.length === 0) return filtro + '<div class="caja"><p class="vacio" style="margin:4px 0">No hay clínicos guardados para esa fecha y turno.</p></div>';
+  const lista = todos.filter((c) => coincideFechaTurno(c, vista.fc, vista.tt));
+  if (lista.length === 0 && !cEdPrev()) return filtro + '<div class="caja"><p class="vacio" style="margin:4px 0">No hay clínicos guardados para esa fecha y turno.</p></div>';
   const celda = (v) => (v ? esc(v) : '—');
   const filas = [
     ['Temp °C', (c) => c.temp], ['Glicemia', (c) => c.glicemia],
@@ -1177,6 +1199,19 @@ function plantillaTablaClinicos(m) {
   ];
   // Clínicos guardados antes, cuando orina y deposiciones eran un solo texto
   if (lista.some((c) => c.orinaDeposiciones)) filas.push(['Orina / deposiciones', (c) => c.orinaDeposiciones]);
+  const cEd = editFecha != null ? todos.find((c) => c.fecha === editFecha) : null;
+  const editor = cEd ? `
+    <div class="caja editor-fecha"><div class="caja-t">Cambiar fecha, hora o turno del clínico</div>
+      <p class="ayuda" style="text-align:center;margin:0">Ahora: ${formatearFecha(cEd.fecha)} ${formatearHora(cEd.fecha)} · ${cEd.turno}</p>
+      <div class="fila3">
+        <label class="campo"><span>Fecha</span><input type="date" data-efc="f" value="${esc(datosFecha.f)}"></label>
+        <label class="campo"><span>Hora</span><input type="time" data-efc="h" value="${esc(datosFecha.h)}"></label>
+        <label class="campo"><span>Turno</span><select data-efc="t">
+          ${['Día', 'Noche'].map((o) => `<option value="${o}" ${datosFecha.t === o ? 'selected' : ''}>${o === 'Día' ? '☀ Día' : '🌙 Noche'}</option>`).join('')}
+        </select></label>
+      </div>
+      <div class="acciones"><button id="guardar-fecha">Guardar cambios</button><button class="sec" id="cancelar-fecha">Cancelar</button></div>
+    </div>` : '';
   const comentarios = lista.map((c) => {
     const cab = `<b>${formatearFecha(c.fecha)} ${formatearHora(c.fecha)} ${iconoTurno(c.turno)}:</b>`;
     if (editCom === c.fecha) {
@@ -1187,11 +1222,11 @@ function plantillaTablaClinicos(m) {
       ? `<p>${cab} ${esc(c.comentarios)} <button class="txt" data-edit-com="${c.fecha}">Editar</button></p>`
       : `<p>${cab} <span class="vacio">Sin comentario</span> <button class="txt" data-edit-com="${c.fecha}">Agregar</button></p>`;
   }).join('');
-  return `${filtro}
+  return `${filtro}${editor}
     <div class="tabla-scroll"><table class="tabla-cl">
       <thead><tr><th></th>${lista.map((c) => `
         <th class="${c.turno === 'Noche' ? 'noche' : 'dia'}">${iconoTurno(c.turno)} ${formatearFecha(c.fecha)}<span class="hora">${formatearHora(c.fecha)} · ${c.turno}
-          <button class="x" data-quitar-cl="${c.fecha}" aria-label="Borrar este clínico">✕</button></span></th>`).join('')}</tr></thead>
+          <button class="x ed" data-edit-fecha="${c.fecha}" aria-label="Cambiar fecha y hora de este clínico">✎</button><button class="x" data-quitar-cl="${c.fecha}" aria-label="Borrar este clínico">✕</button></span></th>`).join('')}</tr></thead>
       <tbody>${filas.map(([t, f]) => `<tr><th scope="row">${t}</th>${lista.map((c) => `<td>${celda(f(c))}</td>`).join('')}</tr>`).join('')}</tbody>
     </table></div>
     <div class="coment-turno"><div class="t">Comentarios del turno</div>${comentarios}</div>`;
@@ -1208,7 +1243,7 @@ function pantallaDetalle(id) {
     // Al abrir la ficha se muestra la fecha del último clínico guardado (o hoy si todavía no hay)
     const ult = m.clinicos.length ? Math.max(...m.clinicos.map((c) => c.fecha)) : Date.now();
     vista = { id, ex: false, cl: false, tc: false, fc: aISO(ult), tt: 'Todos' };
-    borrador = borradorVacio(); editCom = null;
+    borrador = borradorVacio(); editCom = null; editFecha = null;
   }
   if (!borrador) borrador = borradorVacio();
 
@@ -1256,6 +1291,7 @@ function pantallaDetalle(id) {
 
   app.oninput = (e) => {
     if (e.target.dataset.ecom !== undefined) { textoCom = e.target.value; return; }
+    if (e.target.dataset.efc !== undefined) { datosFecha[e.target.dataset.efc] = e.target.value; return; }
     const k = e.target.dataset.c;
     if (!k) return;
     borrador[k] = e.target.value;
@@ -1271,6 +1307,8 @@ function pantallaDetalle(id) {
     } else if (t.dataset.sn) {
       borrador[t.dataset.sn] = t.checked ? t.dataset.v : '';
       redibujar();
+    } else if (t.dataset.efc !== undefined) {
+      datosFecha[t.dataset.efc] = t.value;
     } else if (t.dataset.f) {
       vista[t.dataset.f] = t.value;
       editCom = null;
@@ -1310,6 +1348,32 @@ function pantallaDetalle(id) {
       if (c1) { editCom = c1.fecha; textoCom = c1.comentarios || ''; redibujar(); }
       return;
     }
+    if (b.dataset.editFecha !== undefined) {
+      const c1 = m.clinicos.find((c) => c.fecha === Number(b.dataset.editFecha));
+      if (c1) { editFecha = c1.fecha; editCom = null; datosFecha = { f: aISO(c1.fecha), h: formatearHora(c1.fecha), t: c1.turno }; redibujar(); }
+      return;
+    }
+    if (b.id === 'cancelar-fecha') { editFecha = null; redibujar(); return; }
+    if (b.id === 'guardar-fecha') {
+      const c1 = m.clinicos.find((c) => c.fecha === editFecha);
+      if (!c1) { editFecha = null; redibujar(); return; }
+      if (!datosFecha.f || !datosFecha.h) { alert('Elige la fecha y la hora.'); return; }
+      const [a, mes, d] = datosFecha.f.split('-').map(Number);
+      const [hh, mi] = datosFecha.h.split(':').map(Number);
+      const nueva = new Date(a, mes - 1, d, hh, mi).getTime();
+      if (Number.isNaN(nueva)) { alert('La fecha u hora no es válida.'); return; }
+      if (nueva !== c1.fecha && m.clinicos.some((c) => c.fecha === nueva)) {
+        alert('Ya hay otro clínico guardado a esa misma hora. Cambia la hora al menos un minuto.');
+        return;
+      }
+      if (nueva !== c1.fecha || datosFecha.t !== c1.turno) {
+        nubeEditarClinico(id, c1, { ...c1, fecha: nueva, turno: datosFecha.t });
+        vista.fc = aISO(nueva); vista.tt = 'Todos'; // para que lo veas donde quedó
+        aviso('Clínico actualizado');
+      }
+      editFecha = null; redibujar();
+      return;
+    }
     if (b.id === 'f-todas') { vista.fc = ''; editCom = null; redibujar(); return; }
     if (b.id === 'cancelar-com') { editCom = null; redibujar(); return; }
     if (b.id === 'guardar-com') {
@@ -1336,7 +1400,7 @@ function pantallaDetalle(id) {
       };
       nubeAgregarClinico(id, nuevo);
       borrador = borradorVacio();
-      vista.tc = true; vista.fc = aISO(fecha); vista.tt = nuevo.turno;
+      vista.tc = true; vista.fc = nuevo.turno === 'Noche' ? diaDeNoche(nuevo) : aISO(fecha); vista.tt = nuevo.turno;
       aviso('Clínico guardado');
       redibujar();
       return;

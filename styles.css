@@ -60,7 +60,7 @@ h2 { font-size: 1.1rem; margin: 20px 0 8px; }
 /* ---------- formularios ---------- */
 .campo { display: block; margin-top: 14px; }
 .campo > span, legend { display: block; font-size: .85rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; padding: 0; }
-input[type=text], input[type=number], input[type=date], input[type=email], input[type=password], textarea, select {
+input[type=text], input[type=number], input[type=date], input[type=time], input[type=email], input[type=password], textarea, select {
   width: 100%;
   font: inherit; font-size: 16px; /* 16px evita el zoom automático en iPhone */
   color: var(--text);
@@ -70,7 +70,7 @@ input[type=text], input[type=number], input[type=date], input[type=email], input
   padding: 11px 12px;
   appearance: none; -webkit-appearance: none;
 }
-input[type=date] { min-height: 46px; }
+input[type=date], input[type=time] { min-height: 46px; }
 textarea { resize: vertical; min-height: 84px; }
 input:focus, textarea:focus, select:focus { outline: 2px solid var(--primary); outline-offset: 0; border-color: transparent; }
 input[aria-invalid=true], textarea[aria-invalid=true] { border-color: var(--danger); }
@@ -181,6 +181,8 @@ table.tabla-cl { border-collapse: collapse; width: 100%; min-width: 100%; font-s
 .tabla-cl thead th.dia { background: var(--dia); }
 .tabla-cl thead th.noche { background: var(--noche); }
 .tabla-cl tbody th { font-weight: 600; color: var(--muted); background: var(--card); position: sticky; left: 0; min-width: 120px; }
+.tabla-cl .x.ed { color: var(--primary); }
+.editor-fecha { margin: 0 0 12px; }
 .tabla-cl .x { padding: 0 6px; margin-left: 6px; font-size: .8rem; border-radius: 6px; background: transparent; color: var(--danger); border-color: transparent; }
 .tabla-cl .hora { display: block; font-weight: 400; font-size: .8rem; color: var(--muted); }
 .coment-turno { margin-top: 12px; border: 1px solid var(--plata-borde); border-radius: 14px; background: var(--plata-grad); padding: 10px 14px; }
