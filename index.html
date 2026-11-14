@@ -483,9 +483,9 @@ function guardarCorte(ms) {
 }
 const clinicosOrdenados = (m) => [...m.clinicos].sort((a, b) => a.fecha - b.fecha);
 /* La NOCHE empieza un día y termina al siguiente (1 clínico en la tarde/noche y 2 en la madrugada).
-   Un clínico de turno Noche anotado antes de las 12:00 pertenece a la noche que empezó el día anterior.
+   Un clínico de turno Noche anotado antes de las 7:00 pertenece a la noche que empezó el día anterior.
    Así, al elegir "Noche" y una fecha, salen el clínico de ese día y los de la madrugada siguiente. */
-const HORA_FIN_NOCHE = 12;
+const HORA_FIN_NOCHE = 7;
 function diaDeNoche(c) {
   const d = new Date(c.fecha);
   if (d.getHours() < HORA_FIN_NOCHE) d.setDate(d.getDate() - 1);
@@ -944,7 +944,7 @@ function pantallaLista() {
             ${['Todos', 'Día', 'Noche'].map((o) => `<option value="${o}" ${filtroExp.tt === o ? 'selected' : ''}>${o === 'Día' ? '☀ Día' : o === 'Noche' ? '🌙 Noche' : 'Todos'}</option>`).join('')}
           </select></label>
       </div>
-      ${filtroExp.fc && filtroExp.tt === 'Noche' ? '<p class="ayuda">Noche = el clínico de la tarde/noche de la fecha elegida + los de la madrugada del día siguiente (hasta las 12:00).</p>' : ''}
+      ${filtroExp.fc && filtroExp.tt === 'Noche' ? '<p class="ayuda">Noche = el clínico de la tarde/noche de la fecha elegida + los de la madrugada del día siguiente (hasta las 7:00).</p>' : ''}
       ${hayFiltroExp() ? '<button class="txt" id="exp-limpiar" style="padding:4px 0">Quitar filtro (volver a solo los nuevos)</button>' : '<p class="ayuda">Sin filtro: se copian los clínicos nuevos. Elige fecha y/o turno para copiar solo esos.</p>'}
     </div>
     <p class="vacio" id="info-export">${esc(textoInfoExport())}</p>
