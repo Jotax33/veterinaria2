@@ -45,6 +45,7 @@
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; }
+search { display: block; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -80,6 +81,7 @@ fieldset { border: 0; margin: 14px 0 0; padding: 0; min-width: 0; }
 .opt { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 2px 0; cursor: pointer; }
 .opt input { width: 22px; height: 22px; margin: 0; accent-color: var(--primary); flex: none; }
 .sub { margin-left: 16px; padding-left: 12px; border-left: 3px solid var(--primary-soft); }
+.sub-t { margin: 6px 0 4px; font-size: .8rem; font-weight: 600; color: var(--muted); }
 .err { display: block; color: var(--danger); font-size: .8rem; margin-top: 4px; }
 .err[hidden] { display: none; }
 .ayuda { color: var(--muted); font-size: .85rem; margin: 2px 0 0; }
@@ -108,18 +110,27 @@ button:active:not(:disabled) { transform: scale(.98); }
   padding: 12px 12px 12px 14px; margin: 8px 0; cursor: pointer;
 }
 .tarjeta .info { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.tarjeta .nombre { font-weight: 700; font-size: 1.05rem; }
+.tarjeta .nombre { margin: 0; font-weight: 700; font-size: 1.05rem; }
+.tarjeta .info p { margin: 0; }
+.botones-tarjeta { display: flex; flex-direction: column; gap: 2px; }
 .alerta { color: var(--danger); font-weight: 600; }
 .vacio { color: var(--muted); }
 details.respaldo { margin-top: 28px; background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: var(--radius); padding: 10px 14px; }
 details.respaldo summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
+details.respaldo .acciones { margin-top: 8px; }
+.sesion { margin: 0 0 6px; }
+.sesion button.txt { padding: 2px 6px; }
 .opcion-export { margin: 0 0 4px; }
 #info-export { font-size: .85rem; margin: 0 0 12px; }
+.filtro-cl button.txt { padding: 4px 0; }
 
 /* ---------- importar ---------- */
 .panel { background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: var(--radius); padding: 4px 14px 10px; margin: 6px 0 14px; }
 .panel h2 { margin-top: 12px; }
+.panel > .vacio { margin: 0 0 8px; }
+.banner-local .acciones { margin-top: 0; }
+.resumen-imp { margin: 8px 0 0; }
 .panel .opt small { color: var(--muted); }
 .panel .nueva { color: var(--primary); font-weight: 600; }
 
@@ -130,10 +141,11 @@ details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 }
 .cuadro-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .cuadro-cab h1 { margin: 0; overflow-wrap: anywhere; }
+.volver { margin: 0 0 8px; }
 .dato { padding: 6px 0; }
-.dato .t { font-size: .78rem; font-weight: 600; color: var(--primary); }
-.dato .v { white-space: pre-wrap; overflow-wrap: anywhere; }
-.cuadro .datos { display: grid; grid-template-columns: 1fr; column-gap: 24px; margin-top: 6px; }
+.dato dt { font-size: .78rem; font-weight: 600; color: var(--primary); }
+.dato dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cuadro .datos { display: grid; grid-template-columns: 1fr; column-gap: 24px; margin: 6px 0 0; }
 @media (min-width: 640px) { .cuadro .datos { grid-template-columns: 1fr 1fr; } }
 
 /* ---------- detalle: bloques con botón ---------- */
@@ -142,9 +154,11 @@ details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 .bloque > button { border-radius: 16px; padding: 14px 12px; width: 100%; line-height: 1.25; }
 .contenido { min-width: 0; }
 .caja { background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: 10px; padding: 10px 14px; }
-.caja-t { text-align: center; font-size: .9rem; font-weight: 600; margin-bottom: 6px; }
+.caja-t { text-align: center; font-size: .9rem; font-weight: 600; margin: 0 0 6px; }
+.caja > .vacio { margin: 6px 0; }
+.caja-eco, .caja-radio { margin-top: 10px; }
+.lista-ex { list-style: none; margin: 0; padding: 0; }
 .fila-ex { display: grid; grid-template-columns: 110px 1fr auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
-.fila-ex:first-of-type { border-top: 0; }
 .fila-ex .det { overflow-wrap: anywhere; }
 .etq { display: inline-block; font-size: .72rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; margin-right: 6px; }
 .etq.tomado { background: var(--primary-soft); color: var(--primary); }
@@ -153,14 +167,13 @@ details.respaldo p { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 .fila-ex button.peligro { padding: 4px 8px; font-size: .85rem; }
 .fila-ex .acc-ex { display: flex; gap: 4px; align-items: center; }
 .fila-ex button.ok { padding: 4px 10px; font-size: .85rem; background: var(--primary-soft); color: var(--primary); border-color: transparent; }
-.fila-eco { grid-template-columns: 1fr auto; }
 /* ---------- secciones plateadas (formulario y lista) ---------- */
 .seccion-form { background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: var(--radius); padding: 4px 14px 14px; margin-top: 16px; }
 .seccion-form > .sec-t { margin: 10px 0 0; font-size: .85rem; font-weight: 700; letter-spacing: .02em; color: var(--muted); }
 .seccion-form fieldset:first-of-type { margin-top: 8px; }
+.seccion-form > .opt { margin-top: 8px; }
 .seccion-form > .campo:first-of-type { margin-top: 8px; }
 .grupo-t { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px; padding: 8px 14px; background: var(--plata-grad); border: 1px solid var(--plata-borde); border-radius: 12px; font-size: .95rem; font-weight: 700; }
-.grupo-t:first-of-type { margin-top: 8px; }
 @media (max-width: 480px) { .fila-ex .acc-ex { grid-column: 1 / -1; justify-content: flex-end; flex-wrap: wrap; } }
 
 /* ---------- clínicos ---------- */
@@ -183,10 +196,11 @@ table.tabla-cl { border-collapse: collapse; width: 100%; min-width: 100%; font-s
 .tabla-cl tbody th { font-weight: 600; color: var(--muted); background: var(--card); position: sticky; left: 0; min-width: 120px; }
 .tabla-cl .x.ed { color: var(--primary); }
 .editor-fecha { margin: 0 0 12px; }
+.editor-fecha .ayuda { margin: 0; text-align: center; }
 .tabla-cl .x { padding: 0 6px; margin-left: 6px; font-size: .8rem; border-radius: 6px; background: transparent; color: var(--danger); border-color: transparent; }
 .tabla-cl .hora { display: block; font-weight: 400; font-size: .8rem; color: var(--muted); }
 .coment-turno { margin-top: 12px; border: 1px solid var(--plata-borde); border-radius: 14px; background: var(--plata-grad); padding: 10px 14px; }
-.coment-turno .t { font-size: .85rem; font-weight: 600; text-align: center; margin-bottom: 4px; }
+.coment-turno h2 { font-size: .85rem; font-weight: 600; text-align: center; margin: 0 0 4px; }
 .coment-turno p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .coment-turno p b { font-weight: 600; }
 .coment-turno button.txt { padding: 2px 8px; font-size: .85rem; }
@@ -211,7 +225,7 @@ nav a.activa { color: var(--primary); }
 
 body.sin-sesion nav { display: none; }
 .login { max-width: 380px; margin: 8vh auto 0; }
-#red { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 20; background: #8a5a00; color: #fff;
+#red { margin: 0; position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 20; background: #8a5a00; color: #fff;
   text-align: center; font-size: .85rem; padding: 4px 8px; }
 #red[hidden] { display: none; }
 #aviso {
@@ -221,3 +235,32 @@ body.sin-sesion nav { display: none; }
   opacity: 0; pointer-events: none; transition: .25s; z-index: 10; max-width: 90vw; text-align: center;
 }
 #aviso.ver { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------- detalle: hematocrito, estado, ventanas y clínico (diagrama) ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.form-ht { margin: 0 0 10px; min-width: 0; }
+.form-ht legend { padding: 0 6px; }
+.form-ht .campo { margin-top: 6px; }
+.tabla-ht { border-collapse: collapse; width: 100%; font-size: .92rem; }
+.tabla-ht th, .tabla-ht td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: middle; }
+.tabla-ht thead th { background: var(--card); font-weight: 700; }
+.tabla-ht tbody th { font-weight: 600; white-space: nowrap; }
+.tabla-ht .hora { display: block; font-weight: 400; font-size: .8rem; color: var(--muted); }
+.tabla-ht .x { background: transparent; border-color: transparent; color: var(--danger); padding: 2px 8px; }
+.caja-estado { margin-top: 22px; }
+.fila-opciones { display: flex; flex-wrap: wrap; gap: 4px 22px; margin-top: 0; }
+.fila-opciones legend { width: 100%; }
+.caja-estado .acciones, .dlg .acciones { margin: 10px 0 0; }
+.fila-ex time { font-size: .95rem; }
+dialog.dlg { width: min(92vw, 440px); border: 1px solid var(--plata-borde); border-radius: 24px; background: var(--card); color: var(--text); padding: 18px 20px; }
+dialog.dlg::backdrop { background: rgba(0, 0, 0, .5); }
+.fila-turno { align-items: end; }
+.fila-turno .campo { margin-top: 0; }
+.glicemia { margin: 14px 0 0; min-width: 0; }
+.glicemia .campo { margin-top: 0; }
+.tabla-cl .enf { display: block; font-weight: 600; }
+
+/* ---------- nota de la exportación (tono rojizo suave) ---------- */
+.nota-aviso { margin: 8px 0 12px; padding: 10px 14px; background: var(--danger-soft); border: 1px solid var(--danger); border-left-width: 5px; border-radius: 10px; font-size: .92rem; }
+.nota-aviso p { margin: 0; }
+.nota-aviso strong { color: var(--danger); }
