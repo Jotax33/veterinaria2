@@ -3,26 +3,29 @@ import { aISO, deISO, resultadosATexto, textoAResultados } from './formato.js';
 
 export function estadoVacio() {
   return {
-    fecha: aISO(Date.now()), nombre: '', especie: '', raza: '', anios: '', meses: '', peso: '',
+    fecha: aISO(Date.now()), nombre: '', especie: '', sexo: '', raza: '', anios: '', meses: '', peso: '',
     motivoIngreso: '', diagnostico: '', infeccioso: false,
     retrovirales: '', resultados: [],
     estadoExamenes: 'No', fechaExamenes: aISO(Date.now()), examenesPorTomar: '',
-    ecografia: '', hallazgosEcografia: '',
-    radiografia: '', hallazgosRadiografia: '',
+    ecografia: '', fechaEcografia: aISO(Date.now()), hallazgosEcografia: '',
+    radiografia: '', fechaRadiografia: aISO(Date.now()), hallazgosRadiografia: '',
     enAyuno: false, comentarios: ''
   };
 }
 export function estadoDesde(m) {
   return {
-    fecha: aISO(m.fechaIngreso), nombre: m.nombre, especie: m.especie, raza: m.raza ?? '',
+    fecha: aISO(m.fechaIngreso), nombre: m.nombre, especie: m.especie, sexo: m.sexo ?? '', raza: m.raza ?? '',
     anios: String(Math.floor(m.edad / 12)), meses: String(m.edad % 12),
     peso: m.peso == null ? '' : String(m.peso),
     motivoIngreso: m.motivoIngreso ?? '', diagnostico: m.diagnostico ?? '', infeccioso: !!m.infeccioso,
     retrovirales: m.retrovirales ?? '', resultados: textoAResultados(m.resultadosRetrovirales),
     // Al editar, los exámenes ya registrados se ven en el detalle; aquí se agrega uno nuevo.
     estadoExamenes: 'No', fechaExamenes: aISO(Date.now()), examenesPorTomar: '',
+    // Si está pendiente, la fecha guardada es el día en que se hará; si no, se propone hoy
     ecografia: m.ecografia ?? '', hallazgosEcografia: m.hallazgosEcografia ?? '',
+    fechaEcografia: aISO(m.ecografia === 'Pendiente' && m.fechaEcografia ? m.fechaEcografia : Date.now()),
     radiografia: m.radiografia ?? '', hallazgosRadiografia: m.hallazgosRadiografia ?? '',
+    fechaRadiografia: aISO(m.radiografia === 'Pendiente' && m.fechaRadiografia ? m.fechaRadiografia : Date.now()),
     enAyuno: !!m.enAyuno, comentarios: m.comentarios ?? ''
   };
 }
@@ -36,8 +39,11 @@ export function validar(s) {
   const examenesFalta = s.estadoExamenes !== 'No' && s.examenesPorTomar.trim() === '';
   const hallazgosFalta = s.ecografia === 'Sí' && s.hallazgosEcografia.trim() === '';
   const hallazgosRadioFalta = s.radiografia === 'Sí' && s.hallazgosRadiografia.trim() === '';
-  const ok = s.nombre.trim() !== '' && s.especie !== '' && aniosOk && mesesOk && pesoOk && !examenesFalta && !hallazgosFalta && !hallazgosRadioFalta;
-  return { ok, anios, meses, mesesOk, aniosOk, pesoOk, examenesFalta, hallazgosFalta, hallazgosRadioFalta };
+  const fechaEcoFalta = s.ecografia === 'Pendiente' && !s.fechaEcografia;
+  const fechaRadioFalta = s.radiografia === 'Pendiente' && !s.fechaRadiografia;
+  const ok = s.nombre.trim() !== '' && s.especie !== '' && aniosOk && mesesOk && pesoOk && !examenesFalta && !hallazgosFalta && !hallazgosRadioFalta
+    && !fechaEcoFalta && !fechaRadioFalta;
+  return { ok, anios, meses, mesesOk, aniosOk, pesoOk, examenesFalta, hallazgosFalta, hallazgosRadioFalta, fechaEcoFalta, fechaRadioFalta };
 }
 export function aMascota(s, base) {
   const v = validar(s);
@@ -52,6 +58,7 @@ export function aMascota(s, base) {
     ...base,
     nombre: s.nombre.trim(),
     especie: s.especie,
+    sexo: s.sexo || null,
     raza: s.raza.trim() || null,
     edad: v.anios * 12 + v.meses,
     peso: s.peso.trim() === '' ? null : Number(s.peso.trim().replace(',', '.')),
@@ -63,10 +70,11 @@ export function aMascota(s, base) {
     examenes,
     clinicos: base.clinicos || [],
     ecografia: s.ecografia || null,
-    fechaEcografia: fechaDe(s.ecografia, base.ecografia, base.fechaEcografia),
+    // Pendiente: la fecha es el día en que se hará. Sí: el día en que se registró.
+    fechaEcografia: s.ecografia === 'Pendiente' ? deISO(s.fechaEcografia) : fechaDe(s.ecografia, base.ecografia, base.fechaEcografia),
     hallazgosEcografia: s.ecografia === 'Sí' ? s.hallazgosEcografia.trim() : '',
     radiografia: s.radiografia || null,
-    fechaRadiografia: fechaDe(s.radiografia, base.radiografia, base.fechaRadiografia),
+    fechaRadiografia: s.radiografia === 'Pendiente' ? deISO(s.fechaRadiografia) : fechaDe(s.radiografia, base.radiografia, base.fechaRadiografia),
     hallazgosRadiografia: s.radiografia === 'Sí' ? s.hallazgosRadiografia.trim() : '',
     enAyuno: s.enAyuno,
     comentarios: s.comentarios.trim(),

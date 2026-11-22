@@ -264,3 +264,8 @@ dialog.dlg::backdrop { background: rgba(0, 0, 0, .5); }
 .nota-aviso { margin: 8px 0 12px; padding: 10px 14px; background: var(--danger-soft); border: 1px solid var(--danger); border-left-width: 5px; border-radius: 10px; font-size: .92rem; }
 .nota-aviso p { margin: 0; }
 .nota-aviso strong { color: var(--danger); }
+
+/* Tratamiento actual y comentarios del médico */
+.panel-tr > * + * { margin-top: 10px; }
+.panel-tr .acciones { margin: 12px 0 0; }
+.panel-tr .tabla-scroll { margin-top: 10px; }

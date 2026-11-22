@@ -3,6 +3,7 @@
 import { estado } from './estado.js';
 import { formatearEdad, formatearFecha, formatearFechaHora, deISO, textoPeso, tituloExamenes } from './formato.js';
 import { clinicosOrdenados, examenesOrdenados, mascotasActivas } from './mascota.js';
+import { comentarioMedicoDe, medicamentosDe } from './tratamiento.js';
 import { coincideFechaTurno, diaSiguienteISO, glicemiaTexto } from './clinicos.js';
 
 // El filtro está completo cuando hay fecha y el turno es Día o Noche
@@ -40,6 +41,7 @@ export function generarTextoExportacion() {
       if (m.fechaModificacion != null) L.push(`   Turno: ${formatearFechaHora(m.fechaModificacion)}`);
       if (m.fichaModificada != null) L.push(`   Ficha editada: ${formatearFechaHora(m.fichaModificada)}`);
       L.push(`   Especie: ${m.especie}`);
+      if (m.sexo) L.push(`   Sexo: ${m.sexo}`);
       L.push(`   Raza: ${m.raza ?? 'Sin raza'}`);
       L.push(`   Edad: ${formatearEdad(m.edad)}`);
       if (m.peso != null) L.push(`   Peso: ${textoPeso(m.peso)}`);
@@ -55,8 +57,10 @@ export function generarTextoExportacion() {
         L.push(`   ${tituloExamenes(e.estado)} (${formatearFecha(e.fecha)}): ${e.detalle}`);
       }
       L.push(`   Ecografía: ${m.ecografia ?? 'Sin registrar'}`);
+      if (m.ecografia === 'Pendiente' && m.fechaEcografia) L.push(`   Ecografía pendiente para: ${formatearFecha(m.fechaEcografia)}`);
       if (m.ecografia === 'Sí' && m.hallazgosEcografia) L.push(`   Hallazgos ecografía: ${m.hallazgosEcografia}`);
       L.push(`   Radiografía: ${m.radiografia ?? 'Sin registrar'}`);
+      if (m.radiografia === 'Pendiente' && m.fechaRadiografia) L.push(`   Radiografía pendiente para: ${formatearFecha(m.fechaRadiografia)}`);
       if (m.radiografia === 'Sí' && m.hallazgosRadiografia) L.push(`   Hallazgos radiografía: ${m.hallazgosRadiografia}`);
       L.push(`   En ayuno: ${m.enAyuno ? 'Sí' : 'No'}`);
       if (m.comentarios) L.push(`   Comentarios: ${m.comentarios}`);
@@ -77,6 +81,17 @@ export function generarTextoExportacion() {
         if (c.feca) L.push(`      Feca: ${c.feca}`);
         if (c.orinaDeposiciones) L.push(`      Orina/deposiciones: ${c.orinaDeposiciones}`);
         if (c.comentarios) L.push(`      Comentarios del turno: ${c.comentarios}`);
+      }
+      // Medicamentos y comentario del médico del turno elegido (solo ese turno)
+      if (filtroExpListo()) {
+        const { fc, tt } = estado.filtroExp;
+        const meds = medicamentosDe(m, fc, tt);
+        if (meds.length) {
+          L.push(`   Medicamentos (${tt}):`);
+          for (const x of meds) L.push(`      ${x.nombre} | Dosis: ${x.dosis} | Velocidad: ${x.velocidad} | Vía: ${x.via}`);
+        }
+        const cm = comentarioMedicoDe(m, fc, tt);
+        if (cm) L.push(`   Comentarios del médico${cm.medico ? ` (${cm.medico})` : ''}: ${cm.texto}`);
       }
       L.push('');
     }

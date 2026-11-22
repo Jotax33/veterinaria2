@@ -1,6 +1,6 @@
 // Service worker: deja la app disponible sin internet.
 // Si cambias index.html, sube el número de VERSION para que los teléfonos descarguen la versión nueva.
-const VERSION = 'veterinaria-v26';
+const VERSION = 'veterinaria-v28';
 const ARCHIVOS = [
   './',
   './index.html',
@@ -61,7 +61,10 @@ const ARCHIVOS = [
   './organisms/dialogoHallazgos.js',
   './organisms/formularioHematocrito.js',
   './organisms/panelEstado.js',
+  './organisms/comentariosMedico.js',
+  './organisms/dialogoMedicamento.js',
   './organisms/tablaClinicos.js',
+  './organisms/tablaMedicamentos.js',
   './organisms/tablaHematocrito.js',
   './pages/importarMensaje.js',
   './pages/paginaArchivo.js',
@@ -76,6 +79,7 @@ const ARCHIVOS = [
   './service/dialogos.js',
   './service/hematocrito.js',
   './service/situacion.js',
+  './service/tratamiento.js',
   './service/dom.js',
   './service/estado.js',
   './service/exportacion.js',

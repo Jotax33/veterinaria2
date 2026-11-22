@@ -19,6 +19,8 @@ export function normalizarMascota(m) {
   if (!Array.isArray(m.clinicos)) m.clinicos = [];
   if (!Array.isArray(m.hematocritos)) m.hematocritos = [];
   if (!Array.isArray(m.hospitalizaciones)) m.hospitalizaciones = [];
+  if (!Array.isArray(m.medicamentos)) m.medicamentos = [];
+  if (!Array.isArray(m.comentariosMedico)) m.comentariosMedico = [];
   m.clinicos.forEach((c) => { if (c.creado == null) c.creado = c.fecha; });
   if (m.peso === undefined) m.peso = null;
   // Última vez que se editó la FICHA (no cuenta agregar clínicos ni exámenes). Sirve para saber qué datos son más nuevos al importar.

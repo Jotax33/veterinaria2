@@ -7,9 +7,12 @@ import { buscarMascota, examenesOrdenados } from '../service/mascota.js';
 import { borradorValido, borradorVacio, construirClinico, diaDeNoche, fechaDesdeDatos } from '../service/clinicos.js';
 import { borradorHtVacio, borradorHtValido, construirHematocrito, hayErrorHt } from '../service/hematocrito.js';
 import { dialogoVacio, dialogoValido } from '../service/dialogos.js';
+import {
+  borradorComentarioMedico, comentarioMedicoDe, comentarioMedicoValido, construirComentarioMedico, construirMedicamento, filtroListo, vistaTratamientoInicial
+} from '../service/tratamiento.js';
 import { SITUACIONES_QUE_ARCHIVAN } from '../service/situacion.js';
 import {
-  nubeActualizar, nubeReingresar, nubeAgregarClinico, nubeAgregarExamen, nubeAgregarHematocrito, nubeEditarClinico, nubeEditarExamen, nubeQuitar
+  nubeActualizar, nubeReingresar, nubeAgregarClinico, nubeAgregarExamen, nubeAgregarHematocrito, nubeAgregarMedicamento, nubeAgregarComentarioMedico, nubeEditarComentarioMedico, nubeEditarClinico, nubeEditarExamen, nubeQuitar
 } from '../service/firebase.js';
 import { plantillaDetalle } from '../templates/plantillaDetalle.js';
 
@@ -23,15 +26,20 @@ export function paginaDetalle(id) {
   if (estado.vista.id !== id) {
     // Al abrir la ficha se muestra la fecha del último clínico guardado (o hoy si todavía no hay)
     const ult = m.clinicos.length ? Math.max(...m.clinicos.map((c) => c.fecha)) : Date.now();
-    estado.vista = { id, ex: false, cl: false, tc: false, ht: false, fc: aISO(ult), tt: 'Todos' };
+    estado.vista = { id, ex: false, cl: false, tc: false, ht: false, fc: aISO(ult), tt: 'Todos', ...vistaTratamientoInicial() };
+    estado.borradorCm = null;
     estado.borrador = borradorVacio(); estado.editCom = null; estado.editFecha = null;
     estado.borradorHt = borradorHtVacio(); estado.sit = m.situacion ?? ''; estado.dialogo = null;
   }
   if (!estado.borrador) estado.borrador = borradorVacio();
   if (!estado.borradorHt) estado.borradorHt = borradorHtVacio();
+  // Comentario del médico: al cambiar de fecha o turno se carga el que ya estaba guardado para ese turno (si hay)
+  if (!estado.borradorCm || estado.borradorCm.clave !== `${estado.vista.cf}|${estado.vista.ct}`) {
+    estado.borradorCm = borradorComentarioMedico(m, estado.vista.cf, estado.vista.ct);
+  }
 
   app.innerHTML = plantillaDetalle({
-    m, vista: estado.vista, borrador: estado.borrador, borradorHt: estado.borradorHt, sit: estado.sit, dialogo: estado.dialogo,
+    m, vista: estado.vista, borrador: estado.borrador, borradorHt: estado.borradorHt, borradorCm: estado.borradorCm, sit: estado.sit, dialogo: estado.dialogo,
     editFecha: estado.editFecha, datosFecha: estado.datosFecha, editCom: estado.editCom, textoCom: estado.textoCom
   });
 
@@ -45,9 +53,11 @@ export function paginaDetalle(id) {
     const b = document.getElementById('btn-guardar-ht'); if (b) b.disabled = !borradorHtValido(estado.borradorHt);
     const er = document.getElementById('err-ht'); if (er) er.hidden = !hayErrorHt(estado.borradorHt);
   };
+  const actualizarBotonCm = () => { const b = document.getElementById('btn-guardar-cm'); if (b) b.disabled = !comentarioMedicoValido(estado.borradorCm); };
   const actualizarBoton = () => { const b = document.getElementById('btn-guardar-cl'); if (b) b.disabled = !borradorValido(estado.borrador); };
 
   app.oninput = (e) => {
+    if (e.target.dataset.cm !== undefined) { estado.borradorCm[e.target.dataset.cm] = e.target.value; actualizarBotonCm(); return; }
     if (e.target.dataset.ecom !== undefined) { estado.textoCom = e.target.value; return; }
     if (e.target.dataset.efc !== undefined) { estado.datosFecha[e.target.dataset.efc] = e.target.value; return; }
     if (e.target.dataset.m !== undefined && estado.dialogo) { estado.dialogo[e.target.dataset.m] = e.target.value; actualizarBotonDlg(); return; }
@@ -112,6 +122,39 @@ export function paginaDetalle(id) {
     if (b.id === 'tg-cl') { vista.cl = !vista.cl; redibujar(); return; }
     if (b.id === 'tg-tc') { vista.tc = !vista.tc; redibujar(); return; }
     if (b.id === 'tg-ht') { vista.ht = !vista.ht; redibujar(); return; }
+    if (b.id === 'tg-med') { vista.med = !vista.med; redibujar(); return; }
+    if (b.id === 'tg-cm') { vista.cm = !vista.cm; redibujar(); return; }
+
+    // Tratamiento actual: los medicamentos se agregan de a uno al día y turno que se están viendo
+    if (b.id === 'btn-agregar-med') {
+      if (filtroListo(vista.mf, vista.mt)) { estado.dialogo = dialogoVacio('med'); redibujar(); }
+      return;
+    }
+    if (b.dataset.quitarMed !== undefined) {
+      const x1 = (m.medicamentos ?? []).find((x) => x.creado === Number(b.dataset.quitarMed));
+      if (x1 && confirm(`¿Quitar ${x1.nombre} de la lista?`)) nubeQuitar(id, 'medicamentos', x1);
+      return;
+    }
+
+    // Comentarios del médico: uno por día y turno (si ya existe se edita)
+    if (b.id === 'btn-guardar-cm') {
+      if (!filtroListo(vista.cf, vista.ct) || !comentarioMedicoValido(estado.borradorCm)) return;
+      const nuevo = construirComentarioMedico(estado.borradorCm, vista.cf, vista.ct);
+      const ya = comentarioMedicoDe(m, vista.cf, vista.ct);
+      if (ya) nubeEditarComentarioMedico(id, ya, nuevo); else nubeAgregarComentarioMedico(id, nuevo);
+      aviso(ya ? 'Comentario del médico actualizado' : 'Comentario del médico guardado');
+      redibujar();
+      return;
+    }
+    if (b.id === 'btn-borrar-cm') {
+      const ya = comentarioMedicoDe(m, vista.cf, vista.ct);
+      if (ya && confirm('¿Borrar el comentario del médico de este turno?')) {
+        nubeQuitar(id, 'comentariosMedico', ya);
+        estado.borradorCm = { clave: `${vista.cf}|${vista.ct}`, medico: '', texto: '' };
+        redibujar();
+      }
+      return;
+    }
 
     // Hematocrito
     if (b.id === 'btn-guardar-ht' && borradorHtValido(estado.borradorHt)) {
@@ -154,6 +197,11 @@ export function paginaDetalle(id) {
           nubeEditarExamen(id, e1, { ...e1, estado: 'Tomados', fecha: deISO(aISO(Date.now())) });
           if (d.todos === 'No') nubeAgregarExamen(id, { fecha: deISO(d.fecha), estado: 'Pendientes', detalle: d.pendiente.trim() });
           aviso(d.todos === 'No' ? 'Examen tomado; el resto quedó pendiente' : 'Examen marcado como tomado');
+        }
+      } else if (d.tipo === 'med') {
+        if (filtroListo(vista.mf, vista.mt)) {
+          nubeAgregarMedicamento(id, construirMedicamento(d, vista.mf, vista.mt, m));
+          aviso('Medicamento agregado');
         }
       } else if (d.tipo === 'eco' && m.ecografia === 'Pendiente') {
         nubeActualizar(id, { ecografia: 'Sí', hallazgosEcografia: d.texto.trim(), fechaEcografia: Date.now(), fechaModificacion: Date.now(), fichaModificada: Date.now() });

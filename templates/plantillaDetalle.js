@@ -5,20 +5,31 @@ import { formularioClinico } from '../organisms/formularioClinico.js';
 import { tablaClinicos } from '../organisms/tablaClinicos.js';
 import { formularioHematocrito } from '../organisms/formularioHematocrito.js';
 import { tablaHematocrito } from '../organisms/tablaHematocrito.js';
+import { tablaMedicamentos } from '../organisms/tablaMedicamentos.js';
+import { dialogoMedicamento } from '../organisms/dialogoMedicamento.js';
+import { comentariosMedico } from '../organisms/comentariosMedico.js';
 import { panelEstado } from '../organisms/panelEstado.js';
 import { dialogoExamen } from '../organisms/dialogoExamen.js';
 import { dialogoHallazgos } from '../organisms/dialogoHallazgos.js';
 import { boton } from '../atoms/boton.js';
 
-/** `p` trae: m, vista, borrador, borradorHt, sit (estado elegido), dialogo (ventana abierta) y lo que necesita la tabla de clínicos (editFecha, datosFecha, editCom, textoCom). */
+/** `p` trae: m, vista, borrador, borradorHt, borradorCm (comentario del médico), sit (estado elegido), dialogo (ventana abierta) y lo que necesita la tabla de clínicos (editFecha, datosFecha, editCom, textoCom). */
 export const plantillaDetalle = (p) => {
-  const { m, vista, borrador, borradorHt, sit, dialogo } = p;
+  const { m, vista, borrador, borradorHt, borradorCm, sit, dialogo } = p;
   return `
     <p class="volver"><button class="txt" id="volver">← Volver</button></p>
     ${cuadroMascota(m)}
     <section class="bloque" aria-label="Hematocrito">
       ${boton({ id: 'tg-ht', clase: 'sec', attrs: `aria-expanded="${vista.ht}"`, texto: vista.ht ? 'Ocultar formulario' : 'Agregar hematocrito' })}
       <section class="contenido">${vista.ht ? formularioHematocrito(borradorHt) : ''}${tablaHematocrito(m)}</section>
+    </section>
+    <section class="bloque" aria-label="Tratamiento actual">
+      ${boton({ id: 'tg-med', clase: 'sec', attrs: `aria-expanded="${vista.med}"`, texto: vista.med ? 'Ocultar tratamiento actual' : 'Tratamiento actual' })}
+      <section class="contenido">${vista.med ? tablaMedicamentos(m, vista) : ''}</section>
+    </section>
+    <section class="bloque" aria-label="Comentarios del médico">
+      ${boton({ id: 'tg-cm', clase: 'sec', attrs: `aria-expanded="${vista.cm}"`, texto: vista.cm ? 'Ocultar comentarios del médico' : 'Comentarios del médico' })}
+      <section class="contenido">${vista.cm ? comentariosMedico(m, vista, borradorCm) : ''}</section>
     </section>
     ${panelEstado(m, sit)}
     ${m.estado === 'alta' ? `<footer class="acciones">${boton({ id: 'btn-reingresar', clase: 'sec', texto: 'Reingresar paciente' })}</footer>` : ''}
@@ -37,5 +48,5 @@ export const plantillaDetalle = (p) => {
       <button class="sec" id="tg-tc" aria-expanded="${vista.tc}">${vista.tc ? 'Ocultar clínicos' : 'Mostrar clínicos'}</button>
       <div class="contenido">${vista.tc ? tablaClinicos(p) : ''}</div>
     </section>
-    ${dialogo ? (dialogo.tipo === 'examen' ? dialogoExamen(dialogo) : dialogoHallazgos(dialogo)) : ''}`;
+    ${dialogo ? (dialogo.tipo === 'examen' ? dialogoExamen(dialogo) : dialogo.tipo === 'med' ? dialogoMedicamento(dialogo, vista) : dialogoHallazgos(dialogo)) : ''}`;
 };

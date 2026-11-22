@@ -7,6 +7,12 @@ import { grupoRadio } from '../atoms/grupoRadio.js';
 import { grupoCasillasExclusivo } from '../atoms/grupoCasillasExclusivo.js';
 import { seccionForm } from '../molecules/seccionForm.js';
 
+/** Fecha en que se hará una ecografía o radiografía pendiente (igual que "¿Qué día se tomarán los exámenes?"). */
+const campoPendiente = (k, titulo, valor, errId, error) =>
+  `<label class="campo"><span>${titulo}</span>
+    <input type="date" data-k="${k}" value="${esc(valor)}" ${error ? 'aria-invalid="true"' : ''}>
+    <small class="err" id="${errId}" ${error ? '' : 'hidden'}>Elige el día</small></label>`;
+
 export function plantillaFormulario(s, modo) {
   const v = validar(s);
   const titExamenes = tituloExamenes(s.estadoExamenes);
@@ -17,6 +23,7 @@ export function plantillaFormulario(s, modo) {
       <input type="date" data-k="fecha" value="${esc(s.fecha)}"></label>
     ${campoTexto('nombre', 'Nombre', s.nombre)}
     ${grupoRadio('especie', 'Especie', ['Perro', 'Gato'], s.especie)}
+    ${grupoRadio('sexo', 'Sexo', ['Macho', 'Hembra'], s.sexo)}
     ${campoTexto('raza', 'Raza (opcional)', s.raza)}
     <div class="fila2">
       ${campoTexto('anios', 'Años', s.anios, { tipo: 'number', inputmode: 'numeric' })}
@@ -48,11 +55,13 @@ export function plantillaFormulario(s, modo) {
 
     ${seccionForm('Ecografía', `
     ${grupoCasillasExclusivo('ecografia', 'Ecografía', ['Sí', 'No', 'Pendiente'], s.ecografia)}
+    ${s.ecografia === 'Pendiente' ? campoPendiente('fechaEcografia', '¿Qué día se hará la ecografía?', s.fechaEcografia, 'err-fecha-eco', v.fechaEcoFalta) : ''}
     ${s.ecografia === 'Sí' ? campoTexto('hallazgosEcografia', '¿Qué se vio en la ecografía?', s.hallazgosEcografia, {
         area: true, errId: 'err-hall', errTexto: 'Obligatorio si la ecografía es Sí', error: v.hallazgosFalta }) : ''}`)}
 
     ${seccionForm('Radiografía', `
     ${grupoCasillasExclusivo('radiografia', 'Radiografía', ['Sí', 'No', 'Pendiente'], s.radiografia)}
+    ${s.radiografia === 'Pendiente' ? campoPendiente('fechaRadiografia', '¿Qué día se hará la radiografía?', s.fechaRadiografia, 'err-fecha-radio', v.fechaRadioFalta) : ''}
     ${s.radiografia === 'Sí' ? campoTexto('hallazgosRadiografia', '¿Qué se vio en la radiografía?', s.hallazgosRadiografia, {
         area: true, errId: 'err-hall-radio', errTexto: 'Obligatorio si la radiografía es Sí', error: v.hallazgosRadioFalta }) : ''}`)}
 
@@ -88,6 +97,8 @@ export function montarFormulario(cont, s, modo, alGuardar, alCancelar) {
     marca('err-ex', v.examenesFalta, 'examenesPorTomar');
     marca('err-hall', v.hallazgosFalta, 'hallazgosEcografia');
     marca('err-hall-radio', v.hallazgosRadioFalta, 'hallazgosRadiografia');
+    marca('err-fecha-eco', v.fechaEcoFalta, 'fechaEcografia');
+    marca('err-fecha-radio', v.fechaRadioFalta, 'fechaRadiografia');
   }
 
   // Texto, números y fecha: solo actualizan el estado (no redibujan, para no perder el cursor)

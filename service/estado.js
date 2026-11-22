@@ -20,8 +20,9 @@ export const estado = {
   formIngreso: estadoVacio(),
 
   // Ficha de la mascota: qué secciones están abiertas y qué se está escribiendo
-  vista: { id: null, ex: false, cl: false, tc: false, ht: false, fc: '', tt: 'Todos' },
+  vista: { id: null, ex: false, cl: false, tc: false, ht: false, fc: '', tt: 'Todos' },   // + med, cm, mf, mt, cf, ct (ver service/tratamiento.js)
   borrador: null,
+  borradorCm: null,                                              // comentario del médico que se está escribiendo
   borradorHt: null,                                              // hematocrito que se está escribiendo
   sit: '',                                                       // estado del paciente elegido (sin guardar todavía)
   dialogo: null,                                                 // ventana abierta (examen, ecografía o radiografía)

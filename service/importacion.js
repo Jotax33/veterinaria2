@@ -6,13 +6,14 @@ import { claveExamen, claveMascota, normalizarMascota } from './mascota.js';
 import { enviar, limpiar, nubeCrear, idPara, refDe } from './firebase.js';
 
 export const ETIQUETAS = {
-  'ingreso': 'ingreso', 'turno': 'turno', 'ficha editada': 'ficha', 'especie': 'especie', 'raza': 'raza', 'edad': 'edad', 'peso': 'peso',
+  'ingreso': 'ingreso', 'turno': 'turno', 'ficha editada': 'ficha', 'especie': 'especie', 'sexo': 'sexo', 'raza': 'raza', 'edad': 'edad', 'peso': 'peso',
   'motivo de ingreso': 'motivo', 'diagnostico': 'diagnostico', 'infeccioso': 'infeccioso',
   'retrovirales': 'retro', 'resultados retrovirales': 'resretro',
   'examenes': 'examenes', 'examenes tomados': 'ex_tomados',
   'examenes por tomar': 'ex_pendientes', 'examenes a tomar': 'ex_pendientes',
   'ecografia': 'eco', 'hallazgos ecografia': 'hallazgos',
   'radiografia': 'radio', 'hallazgos radiografia': 'hallazgosradio',
+  'ecografia pendiente para': 'fechaeco', 'radiografia pendiente para': 'fecharadio',
   'en ayuno': 'ayuno', 'comentarios': 'comentarios'
 };
 export const ETIQUETAS_CLINICO = {
@@ -157,6 +158,7 @@ export function parsearMensaje(texto) {
 
     resultado.push({
       nombre, especie,
+      sexo: ['Macho', 'Hembra'].find((x) => sinAcentos(x) === sinAcentos(c.sexo)) ?? null,
       raza: c.raza && sinAcentos(c.raza) !== 'sin raza' ? c.raza : null,
       edad: edadDeTexto(c.edad),
       peso: pesoDeTexto(c.peso),
@@ -168,8 +170,10 @@ export function parsearMensaje(texto) {
       examenes,
       clinicos: clins.sort((a, b) => a.fecha - b.fecha),
       ecografia: eco,
+      fechaEcografia: eco === 'Pendiente' ? fechaDeTexto(c.fechaeco) : null,
       hallazgosEcografia: eco === 'Sí' ? (c.hallazgos || '') : '',
       radiografia: radio,
+      fechaRadiografia: radio === 'Pendiente' ? fechaDeTexto(c.fecharadio) : null,
       hallazgosRadiografia: radio === 'Sí' ? (c.hallazgosradio || '') : '',
       enAyuno: esSi(c.ayuno),
       comentarios: c.comentarios || '',
@@ -196,20 +200,20 @@ export function mezclarFicha(ya, m) {
   const masNuevo = m.fichaModificada != null && m.fichaModificada > fichaLocal;
   const vacio = (v) => v == null || v === '';
   const campo = (k) => (masNuevo ? (vacio(m[k]) ? ya[k] : m[k]) : (vacio(ya[k]) ? m[k] : ya[k]));
-  const par = (k1, k2) => { // dos datos que van juntos (ej.: ecografía y lo que se vio)
+  const par = (k1, ...otros) => { // datos que van juntos (ej.: ecografía, lo que se vio y la fecha)
     const f = masNuevo ? (vacio(m[k1]) ? ya : m) : (vacio(ya[k1]) ? m : ya);
-    return { [k1]: f[k1], [k2]: f[k2] };
+    return Object.fromEntries([k1, ...otros].map((k) => [k, f[k] ?? null]));
   };
   const mods = [ya.fechaModificacion, m.modificacionPrecisa ? m.fechaModificacion : null].filter((x) => x != null);
   return {
-    raza: campo('raza'), peso: campo('peso'),
+    sexo: campo('sexo'), raza: campo('raza'), peso: campo('peso'),
     motivoIngreso: campo('motivoIngreso'), diagnostico: campo('diagnostico'), comentarios: campo('comentarios'),
     edad: Math.max(ya.edad, m.edad),                                        // la edad no baja
     infeccioso: masNuevo ? m.infeccioso : (ya.infeccioso || m.infeccioso),  // ante la duda se mantiene la alerta
     enAyuno: masNuevo ? m.enAyuno : ya.enAyuno,
     ...par('retrovirales', 'resultadosRetrovirales'),
-    ...par('ecografia', 'hallazgosEcografia'),
-    ...par('radiografia', 'hallazgosRadiografia'),
+    ...par('ecografia', 'hallazgosEcografia', 'fechaEcografia'),
+    ...par('radiografia', 'hallazgosRadiografia', 'fechaRadiografia'),
     fichaModificada: Math.max(fichaLocal, m.fichaModificada ?? 0),
     fechaModificacion: mods.length ? Math.max(...mods) : (ya.fechaModificacion ?? m.fechaModificacion ?? null)
   };
@@ -228,7 +232,13 @@ export async function importarMascotas(lista) {
       const claves = new Set(ya.examenes.map(claveExamen));
       const nuevosEx = [];
       for (const e of m.examenes) if (!claves.has(claveExamen(e))) { claves.add(claveExamen(e)); nuevosEx.push(e); }
+      const creadosMed = new Set((ya.medicamentos ?? []).map((x) => x.creado));
+      const nuevosMed = (m.medicamentos ?? []).filter((x) => !creadosMed.has(x.creado));
+      const turnosCm = new Set((ya.comentariosMedico ?? []).map((x) => `${x.dia}|${x.turno}`)); // un comentario que ya tienes no se pisa
+      const nuevosCm = (m.comentariosMedico ?? []).filter((x) => !turnosCm.has(`${x.dia}|${x.turno}`));
       const upd = limpiar(mezclarFicha(ya, { ...m, modificacionPrecisa }));
+      if (nuevosMed.length) upd.medicamentos = estado.FB.arrayUnion(...nuevosMed.map(limpiar));
+      if (nuevosCm.length) upd.comentariosMedico = estado.FB.arrayUnion(...nuevosCm.map(limpiar));
       if (nuevosCl.length) upd.clinicos = estado.FB.arrayUnion(...nuevosCl.map(limpiar));
       if (nuevosEx.length) upd.examenes = estado.FB.arrayUnion(...nuevosEx.map(limpiar));
       enviar(estado.FB.updateDoc(refDe(ya.id), upd));

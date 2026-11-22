@@ -77,6 +77,13 @@ export const nubeEditarExamen = (id, viejo, nuevo) => {
   enviar(estado.FB.updateDoc(refDe(id), { examenes: estado.FB.arrayUnion(limpiar(nuevo)), fechaModificacion: Date.now() }));
   enviar(estado.FB.updateDoc(refDe(id), { examenes: estado.FB.arrayRemove(limpiar(viejo)) }));
 };
+// Medicamentos y comentarios del médico: igual que los clínicos, solo se agrega o quita un elemento
+export const nubeAgregarMedicamento = (id, x) => enviar(estado.FB.updateDoc(refDe(id), { medicamentos: estado.FB.arrayUnion(limpiar(x)), fechaModificacion: Date.now() }));
+export const nubeAgregarComentarioMedico = (id, c) => enviar(estado.FB.updateDoc(refDe(id), { comentariosMedico: estado.FB.arrayUnion(limpiar(c)), fechaModificacion: Date.now() }));
+export const nubeEditarComentarioMedico = (id, viejo, nuevo) => {
+  enviar(estado.FB.updateDoc(refDe(id), { comentariosMedico: estado.FB.arrayUnion(limpiar(nuevo)), fechaModificacion: Date.now() }));
+  enviar(estado.FB.updateDoc(refDe(id), { comentariosMedico: estado.FB.arrayRemove(limpiar(viejo)) }));
+};
 export const nubeAgregarHematocrito = (id, h) => enviar(estado.FB.updateDoc(refDe(id), { hematocritos: estado.FB.arrayUnion(limpiar(h)), fechaModificacion: Date.now() }));
 export const nubeAgregarExamen = (id, e) => enviar(estado.FB.updateDoc(refDe(id), { examenes: estado.FB.arrayUnion(limpiar(e)), fechaModificacion: Date.now() }));
 export const nubeQuitar = (id, campo, item) => enviar(estado.FB.updateDoc(refDe(id), { [campo]: estado.FB.arrayRemove(limpiar(item)) }));
